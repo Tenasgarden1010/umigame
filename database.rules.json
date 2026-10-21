@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "rooms": {
+      "$room": {
+        ".read": true,
+        ".write": true,
+        "msgs": {
+          "$msg": {
+            "text": { ".validate": "newData.isString() && newData.val().length <= 300" }
+          }
+        },
+        "members": {
+          "$member": {
+            "name": { ".validate": "newData.isString() && newData.val().length <= 16" }
+          }
+        }
+      }
+    }
+  }
+}
