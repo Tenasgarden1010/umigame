@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>いとおかし</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-screen app. Lobby = name + passphrase; room = header, scrolling game area (topic, table, hand), optional chat pinned at the bottom. */
+:root {
+  --bg: #f3ede4; --surface: #fbf8f3; --sunk: #e7dfd3; --ink: #2d1f22; --muted: #74605f; --line: #d9cbbd;
+  --accent: #a8344a; --accent-ink: #ffffff; --accent-soft: #f2dde0;
+  --ok: #2f7d4b; --ok-bg: #dcefe2; --ng: #b24a3a; --ng-bg: #f6e0db; --gold: #8a6a12; --gold-bg: #f3ead0; --mine: #f1e2d6;
+  --card: #fffdf9; --card-back: #a8344a;
+  --font-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1314; --surface: #241b1d; --sunk: #140e0f; --ink: #efe3e0; --muted: #b09c99; --line: #41302f;
+    --accent: #e58a99; --accent-ink: #2a0d13; --accent-soft: #3d2228;
+    --ok: #7fd49b; --ok-bg: #183526; --ng: #f0927f; --ng-bg: #3a201b; --gold: #e3c26a; --gold-bg: #352d14; --mine: #33262a;
+    --card: #2e2326; --card-back: #7c2738; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+[hidden] { display: none !important; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app { height: 100%; display: flex; flex-direction: column; max-width: 760px; margin: 0 auto;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 14px; font-weight: 500; }
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.ghost { background: transparent; }
+.btn.small { padding: 3px 10px; font-size: 13px; }
+.btn.armed { background: var(--ng-bg); color: var(--ng); border-color: var(--ng); }
+.label { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.err { color: var(--ng); font-size: 13px; margin: 0; }
+.muted { color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+input.text, select.text { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.banner { background: var(--gold-bg); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+
+.lobby { flex: 1; min-height: 0; overflow-y: auto; padding-block: 28px 40px; display: flex; flex-direction: column; gap: 24px; }
+.credit { margin: 0; font-size: 12px; color: var(--muted); text-align: center; letter-spacing: .05em; }
+.brand { display: flex; flex-direction: column; gap: 6px; }
+.brand h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(34px, 8vw, 52px); line-height: 1.1; margin: 0; letter-spacing: .08em; }
+.brand .sub { font-family: var(--font-display); color: var(--accent); font-size: 14px; letter-spacing: .3em; }
+.brand p { margin: 4px 0 0; max-width: 34em; color: var(--muted); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel h2 { font-family: var(--font-display); font-size: 20px; margin: 0; }
+.rules { margin: 0; padding-left: 1.3em; color: var(--muted); font-size: 14px; }
+
+.top { display: flex; align-items: center; gap: 10px; padding-block: 12px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.top .name { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: .08em; }
+.top .where { color: var(--muted); font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.top .spacer { flex: 1; }
+.main { flex: 1; overflow-y: auto; padding-block: 16px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.main > * { flex-shrink: 0; }
+.members { font-size: 13px; color: var(--muted); }
+.center { margin: auto; text-align: center; padding: 24px; color: var(--muted); }
+
+.topic { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.topic .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.miss-count { font-size: 13px; color: var(--muted); }
+.topic h2 { font-family: var(--font-display); font-size: clamp(22px, 5.5vw, 28px); line-height: 1.4; margin: 0; text-wrap: balance; }
+.scale { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.scale .bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--sunk), var(--accent)); }
+.scale b { font-family: var(--font-display); font-size: 16px; }
+
+.section-title { font-family: var(--font-display); font-size: 17px; margin: 0; }
+.table { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; min-height: 40px; }
+.card { width: 76px; min-height: 104px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); display: flex; flex-direction: column; align-items: center; padding: 6px 4px; gap: 2px; text-align: center; }
+.card .n { font-family: var(--font-display); font-weight: 800; font-size: 30px; line-height: 1.2; }
+.card .who { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; line-height: 1.3; }
+.card .hint { font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+.card.miss { background: var(--ng-bg); border-color: var(--ng); }
+.card.miss .n { color: var(--ng); text-decoration: line-through; }
+.card.back { background: var(--card-back); border-color: transparent; color: #fff; justify-content: center; }
+.card.back .n { font-size: 22px; opacity: .8; }
+.empty { font-size: 13px; color: var(--muted); padding: 8px 0; }
+
+.players { display: flex; flex-direction: column; gap: 6px; }
+.player { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.player .pn { font-weight: 700; }
+.player .left { font-size: 13px; color: var(--muted); }
+.tag { font-size: 13px; background: var(--sunk); padding: 1px 10px; border-radius: 999px; overflow-wrap: anywhere; }
+
+.hand { display: flex; flex-direction: column; gap: 10px; background: var(--accent-soft); border-radius: 12px; padding: 14px; }
+.mycard { display: grid; grid-template-columns: 76px 1fr; gap: 12px; align-items: center; }
+.mycard .ctrl { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mycard .ctrl .row { flex-wrap: nowrap; }
+.mycard .ctrl input { flex: 1; min-width: 0; }
+
+.result { border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.result.clear { background: var(--ok-bg); }
+.result h3 { font-family: var(--font-display); margin: 0; font-size: 20px; }
+.settings { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button + button { border-left: 1px solid var(--line); }
+
+.chat { border-top: 1px solid var(--line); padding-block: 8px calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; }
+.chat .clog { max-height: 28vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.msg { display: flex; flex-direction: column; max-width: 88%; }
+.msg.mine { align-self: flex-end; align-items: flex-end; }
+.msg .who { font-size: 11px; color: var(--muted); }
+.bubble { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 5px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.mine .bubble { background: var(--mine); border-color: transparent; }
+.sys { align-self: center; font-size: 12px; color: var(--muted); background: var(--sunk); padding: 2px 12px; border-radius: 999px; text-align: center; max-width: 100%; }
+.chat .bar { display: flex; gap: 8px; }
+.chat input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 12px; }
+</style>
+</head>
+<body>
+<div class="app" id="app"><p class="center">読み込み中…</p></div>
+<script src="../firebase-config.js"></script>
+<script src="topics.js"></script>
+<script type="module">
+const $app = document.getElementById("app");
+const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
+const ROOM_TTL = 12 * 60 * 60 * 1000;
+
+// ---------- helpers ----------
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat(Infinity)) if (k != null && k !== false) el.append(k instanceof Node ? k : String(k));
+  return el;
+}
+const local = {
+  get(k, d) { try { const v = localStorage.getItem("itookashi:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("itookashi:" + k, JSON.stringify(v)); } catch {} },
+};
+const rid = () => Array.from(crypto.getRandomValues(new Uint8Array(10)), b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+const clip = (s, n) => String(s ?? "").slice(0, n);
+const arr = v => (Array.isArray(v) ? v : v ? Object.values(v) : []);
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+// The passphrase itself is never stored; rooms are keyed by a hash of it ("i" prefix keeps them apart from うみがめ亭 rooms).
+function roomKey(pass) {
+  const s = pass.normalize("NFKC").trim().toLowerCase().replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60)).replace(/\s+/g, "");
+  let a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+  for (const ch of s) { const c = ch.codePointAt(0); a = Math.imul(a ^ c, 0x01000193) >>> 0; b = Math.imul(b ^ c, 0x5bd1e995) >>> 0; b ^= b >>> 13; }
+  return "i" + a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0");
+}
+
+// ---------- backends ----------
+async function firebaseBackend(cfg) {
+  const app = await import(FB + "firebase-app.js");
+  const d = await import(FB + "firebase-database.js");
+  const db = d.getDatabase(app.initializeApp(cfg));
+  const r = p => d.ref(db, p);
+  return {
+    demo: false,
+    listen: (p, cb, onErr) => d.onValue(r(p), s => cb(s.val()), e => onErr && onErr(e)),
+    get: async p => (await d.get(r(p))).val(),
+    set: (p, v) => d.set(r(p), v),
+    update: (p, v) => d.update(r(p), v),
+    remove: p => d.remove(r(p)),
+    push: async (p, v) => { const k = d.push(r(p)); await d.set(k, v); return k.key; },
+    tx: (p, fn) => d.runTransaction(r(p), fn),
+    onDisconnectRemove: p => d.onDisconnect(r(p)).remove(),
+  };
+}
+// Demo mode: the "database" is localStorage, shared only between tabs of this browser.
+function demoBackend() {
+  const KEY = "itookashi-demo-db", subs = new Set();
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+  const parts = p => p.split("/").filter(Boolean);
+  const at = (t, p) => parts(p).reduce((o, k) => (o == null ? null : o[k] ?? null), t);
+  const put = (t, p, v) => {
+    const ks = parts(p); let o = t;
+    for (const k of ks.slice(0, -1)) { if (typeof o[k] !== "object" || o[k] === null) o[k] = {}; o = o[k]; }
+    if (v == null) delete o[ks[ks.length - 1]]; else o[ks[ks.length - 1]] = JSON.parse(JSON.stringify(v));
+  };
+  const notify = () => { const t = load(); subs.forEach(s => { const v = at(t, s.p), j = JSON.stringify(v); if (j !== s.last) { s.last = j; s.cb(v); } }); };
+  const write = fn => { const t = load(); fn(t); try { localStorage.setItem(KEY, JSON.stringify(t)); } catch {} ; notify(); };
+  addEventListener("storage", e => { if (e.key === KEY) notify(); });
+  let seq = 0;
+  return {
+    demo: true,
+    listen(p, cb) { const s = { p, cb, last: undefined }; subs.add(s); setTimeout(() => { const v = at(load(), p); s.last = JSON.stringify(v); cb(v); }); return () => subs.delete(s); },
+    get: async p => at(load(), p),
+    set: async (p, v) => write(t => put(t, p, v)),
+    update: async (p, obj) => write(t => { for (const [k, v] of Object.entries(obj)) put(t, p + "/" + k, v); }),
+    remove: async p => write(t => put(t, p, null)),
+    push: async (p, v) => { const k = Date.now().toString(36).padStart(9, "0") + (seq++).toString(36).padStart(3, "0") + rid().slice(0, 4); write(t => put(t, p + "/" + k, v)); return k; },
+    tx: async (p, fn) => write(t => { const v = fn(JSON.parse(JSON.stringify(at(t, p)))); if (v !== undefined) put(t, p, v); }),
+    onDisconnectRemove() {},
+  };
+}
+
+// ---------- state ----------
+const S = {
+  db: null, screen: "lobby", err: "", busy: false,
+  name: local.get("name", ""), pid: null,
+  key: null, pass: "", room: undefined,
+};
+let unsubRoom = null;
+const isHost = () => S.room && S.room.hostId === S.pid;
+const game = () => (S.room && S.room.game) || null;
+const settings = () => ({ chat: true, ...((S.room && S.room.settings) || {}) });
+
+// ---------- lobby actions ----------
+function readLobby() {
+  S.name = clip(document.getElementById("name").value.trim(), 16);
+  S.pass = clip(document.getElementById("pass").value, 40);
+  local.set("name", S.name);
+  if (!S.name) return fail("名前を入れてください。");
+  if (S.pass.trim().length < 3) return fail("合言葉は3文字以上にしてください。");
+  return true;
+}
+function fail(msg) { S.err = msg; S.busy = false; render(); return false; }
+async function createRoom() {
+  if (!readLobby()) return;
+  S.busy = true; S.err = ""; render();
+  try {
+    const key = roomKey(S.pass), now = Date.now();
+    const cur = await S.db.get("rooms/" + key);
+    if (cur && cur.hostId !== S.pid && now - (cur.updatedAt || 0) < ROOM_TTL) return fail("この合言葉の部屋はもう使われています。別の合言葉にしてください。");
+    await S.db.set("rooms/" + key, { app: "itookashi", hostId: S.pid, hostName: S.name, createdAt: now, updatedAt: now, settings: { chat: true } });
+    enter(key);
+  } catch (e) { fail("部屋を作れませんでした。通信状態を確認してください。"); console.error(e); }
+}
+async function joinRoom() {
+  if (!readLobby()) return;
+  S.busy = true; S.err = ""; render();
+  try {
+    const key = roomKey(S.pass);
+    const cur = await S.db.get("rooms/" + key);
+    if (!cur) return fail("その合言葉の部屋は見つかりません。部屋を作った人に合言葉を確かめてください。");
+    enter(key);
+  } catch (e) { fail("部屋に入れませんでした。通信状態を確認してください。"); console.error(e); }
+}
+function enter(key) {
+  Object.assign(S, { key, screen: "room", room: undefined, busy: false, err: "" });
+  local.set("last", { pass: S.pass });
+  S.db.set(`rooms/${key}/members/${S.pid}`, { name: S.name, joinedAt: Date.now() }).catch(() => {});
+  S.db.onDisconnectRemove(`rooms/${key}/members/${S.pid}`);
+  if (unsubRoom) unsubRoom();
+  unsubRoom = S.db.listen("rooms/" + key, v => {
+    if (v == null && S.room !== undefined) { leave("部屋が閉じられました。"); return; }
+    S.room = v; render();
+  }, () => leave("部屋を読み込めませんでした。"));
+  render();
+}
+function leave(msg) {
+  if (unsubRoom) unsubRoom(); unsubRoom = null;
+  if (S.key && S.room) S.db.remove(`rooms/${S.key}/members/${S.pid}`).catch(() => {});
+  Object.assign(S, { screen: "lobby", key: null, room: undefined, err: msg || "" });
+  render();
+}
+
+// ---------- room actions ----------
+const roomPath = p => `rooms/${S.key}` + (p ? "/" + p : "");
+const touch = () => ({ updatedAt: Date.now() });
+const sys = text => S.db.push(roomPath("msgs"), { kind: "sys", text: clip(text, 300), at: Date.now() }).catch(() => {});
+
+function pickTopic(avoid) {
+  const all = window.ITO_TOPICS || [];
+  let list = all.filter(t => t.t !== avoid);
+  if (!list.length) list = all;
+  const t = list[crypto.getRandomValues(new Uint32Array(1))[0] % list.length];
+  return { t: t.t, lo: t.lo, hi: t.hi };
+}
+const maxLevel = n => Math.max(1, Math.floor(100 / Math.max(1, n)));
+// Deal `level` cards to everyone in the room, with a random topic.
+async function deal(level) {
+  const r = S.room;
+  const ms = Object.entries(r.members || {});
+  if (!ms.length) return;
+  const lv = Math.min(level, maxLevel(ms.length));
+  const deck = shuffle(Array.from({ length: 100 }, (_, i) => i + 1));
+  const hands = {};
+  for (const [pid, m] of ms) hands[pid] = { name: m.name, cards: deck.splice(0, lv).sort((a, b) => a - b).map(n => ({ n, state: "hand", hint: "" })) };
+  const prev = game();
+  await S.db.update(roomPath(), {
+    game: {
+      round: (prev ? prev.round : 0) + 1, level: lv, miss: 0, status: "play",
+      topic: pickTopic(prev && prev.topic && prev.topic.t), hands, pile: null,
+    },
+    ...touch(),
+  });
+  sys(`レベル${lv} を配りました（ひとり${lv}枚）`);
+}
+const startGame = () => deal(1);
+const nextLevel = () => deal(game().level + 1);
+const redeal = () => deal(game().level);
+
+async function playCard(i) {
+  const pid = S.pid;
+  let outcome = null;
+  await S.db.tx(roomPath("game"), g => {
+    if (!g) return g;
+    if (g.status !== "play") return;
+    const me = g.hands && g.hands[pid]; const cards = me && arr(me.cards);
+    if (!cards || !cards[i] || cards[i].state !== "hand") return;
+    const c = cards[i], pile = arr(g.pile);
+    const lower = [];
+    for (const [qid, hd] of Object.entries(g.hands)) arr(hd.cards).forEach((x, j) => {
+      if (x.state === "hand" && x.n < c.n && !(qid === pid && j === i)) lower.push({ qid, j, x, name: hd.name });
+    });
+    lower.sort((a, b) => a.x.n - b.x.n);
+    for (const l of lower) { g.hands[l.qid].cards = arr(g.hands[l.qid].cards); g.hands[l.qid].cards[l.j].state = "miss"; pile.push({ n: l.x.n, name: l.name, hint: l.x.hint || "", miss: true }); }
+    me.cards = cards; cards[i].state = "played";
+    pile.push({ n: c.n, name: me.name, hint: c.hint || "" });
+    g.pile = pile;
+    if (lower.length) g.miss = (g.miss || 0) + 1;
+    const left = Object.values(g.hands).some(hd => arr(hd.cards).some(x => x.state === "hand"));
+    g.status = left ? "play" : "clear";
+    outcome = { n: c.n, miss: lower.map(l => `${l.name}の${l.x.n}`), status: g.status, level: g.level };
+    return g;
+  });
+  if (!outcome) return;
+  if (outcome.miss.length) sys(`${S.name}が ${outcome.n} を出しました。でも ${outcome.miss.join("、")} が小さかった…`);
+  if (outcome.status === "clear") sys(`レベル${outcome.level} おしまい！`);
+  S.db.update(roomPath(), touch());
+}
+function saveHint(i, text) {
+  const g = game(); if (!g || g.status !== "play") return;
+  S.db.update(roomPath(`game/hands/${S.pid}/cards/${i}`), { hint: clip(text.trim(), 30) }).catch(() => {});
+}
+const setSetting = (k, v) => S.db.update(roomPath("settings"), { [k]: v });
+async function sendChat() {
+  const el = document.getElementById("say");
+  const text = clip((el.value || "").trim(), 300);
+  if (!text) return;
+  el.value = "";
+  try { await S.db.push(roomPath("msgs"), { kind: "chat", text, by: S.pid, name: S.name, at: Date.now() }); S.db.update(roomPath(), touch()); }
+  catch { el.value = text; }
+}
+async function closeRoom() { await S.db.remove(roomPath()); }
+
+// Two-step button: first press arms it, second press within 4s runs it.
+function confirmBtn(label, armed, run, cls = "btn small ghost") {
+  const b = h("button", { class: cls, type: "button" }, label); let t;
+  b.addEventListener("click", () => {
+    if (b.classList.contains("armed")) { clearTimeout(t); b.classList.remove("armed"); b.textContent = label; run(); return; }
+    b.classList.add("armed"); b.textContent = armed;
+    t = setTimeout(() => { b.classList.remove("armed"); b.textContent = label; }, 4000);
+  });
+  return b;
+}
+
+// ---------- render ----------
+function render() {
+  const log = document.querySelector(".clog");
+  const nearBottom = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  const mainTop = document.querySelector(".main")?.scrollTop;
+  const keep = {};
+  document.querySelectorAll("input[id]").forEach(el => (keep[el.id] = el.value));
+  const act = document.activeElement, focusId = act && act.id, sel = act && act.selectionStart != null ? [act.selectionStart, act.selectionEnd] : null;
+  $app.replaceChildren(S.screen === "lobby" ? lobby() : room());
+  for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (el && v != null) el.value = v; }
+  const m = document.querySelector(".main"); if (m && mainTop != null) m.scrollTop = mainTop;
+  const nl = document.querySelector(".clog"); if (nl && nearBottom) nl.scrollTop = nl.scrollHeight;
+  const back = focusId && document.getElementById(focusId);
+  if (back) { back.focus({ preventScroll: true }); if (sel) try { back.setSelectionRange(sel[0], sel[1]); } catch {} }
+}
+
+function lobby() {
+  const last = local.get("last", {});
+  return h("main", { class: "lobby" },
+    h("header", { class: "brand" },
+      h("span", { class: "sub" }, "ことばで並べる数字の糸"),
+      h("h1", null, "いとおかし"),
+      h("p", null, "1〜100の数字カードが配られます。数字は言わずに、お題に沿った「たとえ」で大きさを伝え合い、みんなで小さい順にカードを出していく協力ゲームです。")),
+    S.db && S.db.demo ? h("p", { class: "banner" }, "デモモードです。データベースの設定がまだなので、この端末の別タブ同士でだけ遊べます。") : null,
+    h("section", { class: "panel" },
+      h("h2", null, "部屋に入る"),
+      h("label", { class: "field" }, h("span", { class: "label" }, "あなたの名前"),
+        h("input", { id: "name", class: "text", maxlength: "16", placeholder: "ニックネーム", value: S.name, autocomplete: "nickname" })),
+      h("label", { class: "field" }, h("span", { class: "label" }, "合言葉"),
+        h("input", { id: "pass", class: "text", maxlength: "40", placeholder: "例: さくらもち7", value: last.pass || "", autocomplete: "off" }),
+        h("span", { class: "note" }, "同じ合言葉を入れた人どうしが、同じ部屋に入ります。ひらがな・カタカナ、全角・半角の違いは区別しません。")),
+      S.err ? h("p", { class: "err", role: "alert" }, S.err) : null,
+      h("div", { class: "row" },
+        h("button", { class: "btn primary", type: "button", disabled: S.busy || !S.db, onclick: joinRoom }, "部屋に入る"),
+        h("button", { class: "btn", type: "button", disabled: S.busy || !S.db, onclick: createRoom }, "部屋を作る"))),
+    h("section", { class: "panel" },
+      h("h2", null, "遊び方"),
+      h("ol", { class: "rules" },
+        h("li", null, "ひとりが合言葉を決めて部屋を作り、みんなに合言葉を伝えます。"),
+        h("li", null, "全員そろったら、部屋を作った人が「ゲームを始める」を押します。ひとりに数字カードが配られ、お題が出ます。"),
+        h("li", null, "自分の数字の大きさを、お題に沿ったたとえで表現します（例：お題「幸せを感じる瞬間」で 90 なら「推しと目が合う」）。声でもチャットでも、カードの「ひとこと」欄でもOK。"),
+        h("li", null, "いちばん小さいと思う人から、カードを出していきます。出したカードより小さい数字を持っている人がいたらミス。そのカードは捨てて、続けます。"),
+        h("li", null, "全員のカードがなくなったらレベル終了。ミスなしならパーフェクトです。レベルが上がるごとに、配られる枚数が1枚ずつ増えます。"))),
+    h("p", { class: "credit" }, "開発：tenwalker"));
+}
+
+function cardEl(n, who, hint, cls = "") {
+  return h("div", { class: "card " + cls }, h("span", { class: "n" }, n), who ? h("span", { class: "who" }, who) : null, hint ? h("span", { class: "hint" }, "「" + hint + "」") : null);
+}
+
+function settingsPanel(inGame) {
+  const st = settings();
+  return h("section", { class: "panel" },
+    h("h2", null, inGame ? "設定" : "ゲームの準備"),
+    h("div", { class: "settings" },
+      h("div", { class: "field" }, h("span", { class: "label" }, "チャット欄"),
+        h("div", { class: "seg", role: "group", "aria-label": "チャット欄" },
+          h("button", { type: "button", "aria-pressed": String(st.chat), onclick: () => setSetting("chat", true) }, "表示する"),
+          h("button", { type: "button", "aria-pressed": String(!st.chat), onclick: () => setSetting("chat", false) }, "表示しない")),
+        h("span", { class: "note" }, "集まって／通話しながら遊ぶなら「表示しない」でも大丈夫です。"))),
+    !inGame ? h("button", { class: "btn primary", type: "button", onclick: startGame }, "ゲームを始める") : null);
+}
+
+function topicPanel(g) {
+  const t = g.topic || {};
+  return h("section", { class: "topic" },
+    h("div", { class: "head" },
+      h("span", { class: "label" }, `レベル ${g.level}　・　ひとり ${g.level} 枚`),
+      h("span", { class: "miss-count" }, g.miss ? `ミス ${g.miss} 回` : "ミスなし")),
+    h("span", { class: "label" }, "お題"),
+    h("h2", null, t.t || ""),
+    h("div", { class: "scale" },
+      h("span", null, h("b", null, "1"), " ", t.lo || ""),
+      h("span", { class: "bar" }),
+      h("span", null, t.hi || "", " ", h("b", null, "100"))));
+}
+
+function room() {
+  const r = S.room, g = game(), host = isHost(), st = settings();
+  if (r === undefined) return h("p", { class: "center" }, "部屋に入っています…");
+  const members = Object.values(r.members || {}).map(m => m.name);
+  const kids = [h("div", { class: "members" }, `参加中（${members.length}人）：`, members.join("、"))];
+
+  if (!g) {
+    kids.push(host ? settingsPanel(false) : h("p", { class: "center" }, `${r.hostName}さんがゲームを始めるのを待っています。`));
+  } else {
+    kids.push(topicPanel(g));
+    const pile = arr(g.pile);
+    kids.push(h("h3", { class: "section-title" }, "場に出たカード"),
+      h("div", { class: "table" }, pile.length ? pile.map(p => cardEl(p.n, p.name, p.hint, p.miss ? "miss" : "")) : h("span", { class: "empty" }, "まだ出ていません。いちばん小さいと思う人から出しましょう。")));
+
+    if (g.status !== "play") {
+      const canNext = g.level + 1 <= maxLevel(members.length);
+      kids.push(h("section", { class: "result clear" },
+        h("h3", null, g.miss ? `レベル ${g.level} おしまい（ミス ${g.miss} 回）` : `レベル ${g.level} パーフェクト！`),
+        h("p", { style: "margin:0" }, canNext ? "次はひとり1枚ずつ増えます。" : "これ以上レベルを上げられません。完全制覇です！"),
+        host ? h("div", { class: "row" },
+          canNext ? h("button", { class: "btn primary", type: "button", onclick: nextLevel }, `レベル ${g.level + 1} へ`) : null,
+          h("button", { class: canNext ? "btn" : "btn primary", type: "button", onclick: startGame }, "レベル1からやり直す"))
+          : h("p", { class: "note" }, `${r.hostName}さんが次を始めるのを待っています。`)));
+    }
+
+    const hands = Object.entries(g.hands || {});
+    kids.push(h("h3", { class: "section-title" }, "みんなの手札"),
+      h("div", { class: "players" }, hands.map(([pid, hd]) => {
+        const left = arr(hd.cards).filter(x => x.state === "hand");
+        return h("div", { class: "player" },
+          h("span", { class: "pn" }, hd.name + (pid === S.pid ? "（あなた）" : "")),
+          h("span", { class: "left" }, left.length ? `のこり ${left.length} 枚` : "出し切りました"),
+          left.filter(x => x.hint).map(x => h("span", { class: "tag" }, "「" + x.hint + "」")));
+      })));
+
+    const mine = g.hands && g.hands[S.pid];
+    if (!mine) kids.push(h("p", { class: "banner" }, "このレベルの途中から参加しました。次に配られるときから参加できます。" + (host ? "すぐ入れたいときは下の「配り直す」を押してください。" : "")));
+    else if (g.status === "play") {
+      const cards = arr(mine.cards).map((c, i) => ({ ...c, i })).filter(c => c.state === "hand");
+      kids.push(h("section", { class: "hand" },
+        h("h3", { class: "section-title" }, "あなたのカード"),
+        h("p", { class: "note" }, "数字は自分にしか見えません。「ひとこと」にたとえを書くと、みんなの画面に表示されます。"),
+        cards.length ? cards.map(c => h("div", { class: "mycard" },
+          cardEl(c.n),
+          h("div", { class: "ctrl" },
+            h("div", { class: "row" },
+              h("input", { id: `hint-${g.round}-${c.i}`, class: "text", maxlength: "30", placeholder: "ひとこと（例：推しと目が合う）", value: c.hint || "",
+                onchange: e => saveHint(c.i, e.target.value),
+                onkeydown: e => { if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); saveHint(c.i, e.target.value); e.target.blur(); } } })),
+            h("div", { class: "row" }, confirmBtn("このカードを出す", "もう一度押すと出します", () => playCard(c.i), "btn small primary")))))
+          : h("p", { class: "note" }, "あなたのカードは全部出しました。みんなを見守りましょう。")));
+    }
+    if (host) kids.push(h("div", { class: "row" },
+      g.status === "play" ? confirmBtn("このレベルを配り直す", "もう一度押すと配り直します", redeal) : null),
+      settingsPanel(true));
+  }
+
+  const msgs = Object.entries(r.msgs || {}).sort(([a], [b]) => (a < b ? -1 : 1)).slice(-80).map(([, m]) => m);
+  const chat = st.chat ? h("footer", { class: "chat" },
+    h("div", { class: "clog", "aria-live": "polite" },
+      msgs.length ? msgs.map(m => m.kind === "sys" ? h("div", { class: "sys" }, m.text)
+        : h("div", { class: "msg" + (m.by === S.pid ? " mine" : "") }, m.by !== S.pid ? h("span", { class: "who" }, m.name) : null, h("div", { class: "bubble" }, m.text)))
+        : h("div", { class: "sys" }, "チャットでたとえを伝え合えます")),
+    h("div", { class: "bar" },
+      h("input", { id: "say", maxlength: "300", "aria-label": "チャット", placeholder: "例：わたしのは「毎朝のコーヒー」くらい",
+        onkeydown: e => { if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); sendChat(); } } }),
+      h("button", { class: "btn primary", type: "button", onclick: sendChat }, "送る"))) : null;
+
+  return h("div", { style: "display:contents" },
+    h("header", { class: "top" },
+      confirmBtn("← 退室", "もう一度押すと退室", () => leave("")),
+      h("span", { class: "name" }, "いとおかし"),
+      h("span", { class: "where" }, host ? "あなたが部屋主" : `部屋主：${r.hostName}`),
+      h("span", { class: "spacer" }),
+      host ? confirmBtn("部屋を閉じる", "もう一度押すと部屋を削除", closeRoom) : null),
+    h("div", { class: "main" }, kids),
+    chat);
+}
+
+// ---------- boot ----------
+(async () => {
+  const cfg = window.FIREBASE_CONFIG || {};
+  if (!cfg.databaseURL) { try { S.pid = sessionStorage.getItem("itookashi:pid") || rid(); sessionStorage.setItem("itookashi:pid", S.pid); } catch { S.pid = rid(); } }
+  else S.pid = local.get("pid", null) || (() => { const v = rid(); local.set("pid", v); return v; })();
+  try { S.db = cfg.databaseURL ? await firebaseBackend(cfg) : demoBackend(); }
+  catch (e) { console.error(e); S.err = "データベースにつながりませんでした。"; }
+  render();
+})();
+</script>
+</body>
+</html>
