@@ -72,7 +72,7 @@ input.text, select.text { border: 1px solid var(--line); background: var(--bg); 
 
 .topic { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
 .topic .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-.life { font-size: 18px; letter-spacing: 2px; color: var(--accent); }
+.miss-count { font-size: 13px; color: var(--muted); }
 .topic h2 { font-family: var(--font-display); font-size: clamp(22px, 5.5vw, 28px); line-height: 1.4; margin: 0; text-wrap: balance; }
 .scale { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
 .scale .bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--sunk), var(--accent)); }
@@ -104,7 +104,6 @@ input.text, select.text { border: 1px solid var(--line); background: var(--bg); 
 
 .result { border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .result.clear { background: var(--ok-bg); }
-.result.over { background: var(--ng-bg); }
 .result h3 { font-family: var(--font-display); margin: 0; font-size: 20px; }
 .settings { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
@@ -132,7 +131,6 @@ input.text, select.text { border: 1px solid var(--line); background: var(--bg); 
 const $app = document.getElementById("app");
 const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
 const ROOM_TTL = 12 * 60 * 60 * 1000;
-const CATS = ["ぜんぶ", "恋愛", "価値観", "こころ"];
 
 // ---------- helpers ----------
 function h(tag, attrs, ...kids) {
@@ -212,12 +210,12 @@ function demoBackend() {
 const S = {
   db: null, screen: "lobby", err: "", busy: false,
   name: local.get("name", ""), pid: null,
-  key: null, pass: "", room: undefined, customTopic: false,
+  key: null, pass: "", room: undefined,
 };
 let unsubRoom = null;
 const isHost = () => S.room && S.room.hostId === S.pid;
 const game = () => (S.room && S.room.game) || null;
-const settings = () => ({ chat: true, life: 3, cat: "ぜんぶ", ...((S.room && S.room.settings) || {}) });
+const settings = () => ({ chat: true, ...((S.room && S.room.settings) || {}) });
 
 // ---------- lobby actions ----------
 function readLobby() {
@@ -236,7 +234,7 @@ async function createRoom() {
     const key = roomKey(S.pass), now = Date.now();
     const cur = await S.db.get("rooms/" + key);
     if (cur && cur.hostId !== S.pid && now - (cur.updatedAt || 0) < ROOM_TTL) return fail("この合言葉の部屋はもう使われています。別の合言葉にしてください。");
-    await S.db.set("rooms/" + key, { app: "itookashi", hostId: S.pid, hostName: S.name, createdAt: now, updatedAt: now, settings: { chat: true, life: 3, cat: "ぜんぶ" } });
+    await S.db.set("rooms/" + key, { app: "itookashi", hostId: S.pid, hostName: S.name, createdAt: now, updatedAt: now, settings: { chat: true } });
     enter(key);
   } catch (e) { fail("部屋を作れませんでした。通信状態を確認してください。"); console.error(e); }
 }
@@ -251,7 +249,7 @@ async function joinRoom() {
   } catch (e) { fail("部屋に入れませんでした。通信状態を確認してください。"); console.error(e); }
 }
 function enter(key) {
-  Object.assign(S, { key, screen: "room", room: undefined, busy: false, err: "", customTopic: false });
+  Object.assign(S, { key, screen: "room", room: undefined, busy: false, err: "" });
   local.set("last", { pass: S.pass });
   S.db.set(`rooms/${key}/members/${S.pid}`, { name: S.name, joinedAt: Date.now() }).catch(() => {});
   S.db.onDisconnectRemove(`rooms/${key}/members/${S.pid}`);
@@ -274,17 +272,17 @@ const roomPath = p => `rooms/${S.key}` + (p ? "/" + p : "");
 const touch = () => ({ updatedAt: Date.now() });
 const sys = text => S.db.push(roomPath("msgs"), { kind: "sys", text: clip(text, 300), at: Date.now() }).catch(() => {});
 
-function pickTopic(cat, avoid) {
+function pickTopic(avoid) {
   const all = window.ITO_TOPICS || [];
-  let list = all.filter(t => (cat === "ぜんぶ" || t.c === cat) && t.t !== avoid);
+  let list = all.filter(t => t.t !== avoid);
   if (!list.length) list = all;
   const t = list[crypto.getRandomValues(new Uint32Array(1))[0] % list.length];
   return { t: t.t, lo: t.lo, hi: t.hi };
 }
 const maxLevel = n => Math.max(1, Math.floor(100 / Math.max(1, n)));
-// Deal `level` cards to everyone in the room. Life carries over between levels.
-async function deal(level, life) {
-  const r = S.room, st = settings();
+// Deal `level` cards to everyone in the room, with a random topic.
+async function deal(level) {
+  const r = S.room;
   const ms = Object.entries(r.members || {});
   if (!ms.length) return;
   const lv = Math.min(level, maxLevel(ms.length));
@@ -294,18 +292,16 @@ async function deal(level, life) {
   const prev = game();
   await S.db.update(roomPath(), {
     game: {
-      round: (prev ? prev.round : 0) + 1, level: lv, life, maxLife: st.life, status: "play",
-      topic: pickTopic(st.cat, prev && prev.topic && prev.topic.t), hands, pile: null,
-      best: Math.max(prev && prev.best || 0, prev && prev.status === "clear" ? prev.level : 0),
+      round: (prev ? prev.round : 0) + 1, level: lv, miss: 0, status: "play",
+      topic: pickTopic(prev && prev.topic && prev.topic.t), hands, pile: null,
     },
     ...touch(),
   });
   sys(`レベル${lv} を配りました（ひとり${lv}枚）`);
-  S.customTopic = false;
 }
-const startGame = () => deal(1, settings().life);
-const nextLevel = () => { const g = game(); deal(g.level + 1, g.life); };
-const redeal = () => { const g = game(); deal(g.level, g.life); };
+const startGame = () => deal(1);
+const nextLevel = () => deal(game().level + 1);
+const redeal = () => deal(game().level);
 
 async function playCard(i) {
   const pid = S.pid;
@@ -325,26 +321,20 @@ async function playCard(i) {
     me.cards = cards; cards[i].state = "played";
     pile.push({ n: c.n, name: me.name, hint: c.hint || "" });
     g.pile = pile;
-    if (lower.length) g.life = Math.max(0, (g.life || 0) - 1);
+    if (lower.length) g.miss = (g.miss || 0) + 1;
     const left = Object.values(g.hands).some(hd => arr(hd.cards).some(x => x.state === "hand"));
-    g.status = g.life <= 0 ? "over" : left ? "play" : "clear";
+    g.status = left ? "play" : "clear";
     outcome = { n: c.n, miss: lower.map(l => `${l.name}の${l.x.n}`), status: g.status, level: g.level };
     return g;
   });
   if (!outcome) return;
-  if (outcome.miss.length) sys(`${S.name}が ${outcome.n} を出しました。でも ${outcome.miss.join("、")} が小さかった…ライフ -1`);
-  if (outcome.status === "clear") sys(`レベル${outcome.level} クリア！`);
-  if (outcome.status === "over") sys("ライフがなくなりました。ゲームオーバー");
+  if (outcome.miss.length) sys(`${S.name}が ${outcome.n} を出しました。でも ${outcome.miss.join("、")} が小さかった…`);
+  if (outcome.status === "clear") sys(`レベル${outcome.level} おしまい！`);
   S.db.update(roomPath(), touch());
 }
 function saveHint(i, text) {
   const g = game(); if (!g || g.status !== "play") return;
   S.db.update(roomPath(`game/hands/${S.pid}/cards/${i}`), { hint: clip(text.trim(), 30) }).catch(() => {});
-}
-async function changeTopic(topic) {
-  await S.db.update(roomPath("game"), { topic });
-  sys(`お題が「${topic.t}」に変わりました`);
-  S.customTopic = false; render();
 }
 const setSetting = (k, v) => S.db.update(roomPath("settings"), { [k]: v });
 async function sendChat() {
@@ -409,15 +399,14 @@ function lobby() {
         h("li", null, "ひとりが合言葉を決めて部屋を作り、みんなに合言葉を伝えます。"),
         h("li", null, "全員そろったら、部屋を作った人が「ゲームを始める」を押します。ひとりに数字カードが配られ、お題が出ます。"),
         h("li", null, "自分の数字の大きさを、お題に沿ったたとえで表現します（例：お題「幸せを感じる瞬間」で 90 なら「推しと目が合う」）。声でもチャットでも、カードの「ひとこと」欄でもOK。"),
-        h("li", null, "いちばん小さいと思う人から、カードを出していきます。出したカードより小さい数字を持っている人がいたら失敗で、ライフが1つ減ります。"),
-        h("li", null, "全員のカードを出し切ればクリア。レベルが上がるごとに、配られる枚数が1枚ずつ増えます。"))),
+        h("li", null, "いちばん小さいと思う人から、カードを出していきます。出したカードより小さい数字を持っている人がいたらミス。そのカードは捨てて、続けます。"),
+        h("li", null, "全員のカードがなくなったらレベル終了。ミスなしならパーフェクトです。レベルが上がるごとに、配られる枚数が1枚ずつ増えます。"))),
     h("p", { class: "credit" }, "開発：tenwalker"));
 }
 
 function cardEl(n, who, hint, cls = "") {
   return h("div", { class: "card " + cls }, h("span", { class: "n" }, n), who ? h("span", { class: "who" }, who) : null, hint ? h("span", { class: "hint" }, "「" + hint + "」") : null);
 }
-const hearts = (life, max) => "♥".repeat(Math.max(0, life)) + "♡".repeat(Math.max(0, max - life));
 
 function settingsPanel(inGame) {
   const st = settings();
@@ -428,44 +417,22 @@ function settingsPanel(inGame) {
         h("div", { class: "seg", role: "group", "aria-label": "チャット欄" },
           h("button", { type: "button", "aria-pressed": String(st.chat), onclick: () => setSetting("chat", true) }, "表示する"),
           h("button", { type: "button", "aria-pressed": String(!st.chat), onclick: () => setSetting("chat", false) }, "表示しない")),
-        h("span", { class: "note" }, "集まって／通話しながら遊ぶなら「表示しない」でも大丈夫です。")),
-      h("div", { class: "field" }, h("span", { class: "label" }, "ライフ（次にレベル1から始めるときに反映）"),
-        h("div", { class: "seg", role: "group", "aria-label": "ライフ" },
-          [1, 2, 3, 4, 5].map(n => h("button", { type: "button", "aria-pressed": String(st.life === n), onclick: () => setSetting("life", n) }, String(n))))),
-      h("div", { class: "field" }, h("span", { class: "label" }, "お題の種類"),
-        h("div", { class: "seg", role: "group", "aria-label": "お題の種類" },
-          CATS.map(c => h("button", { type: "button", "aria-pressed": String(st.cat === c), onclick: () => setSetting("cat", c) }, c))))),
+        h("span", { class: "note" }, "集まって／通話しながら遊ぶなら「表示しない」でも大丈夫です。"))),
     !inGame ? h("button", { class: "btn primary", type: "button", onclick: startGame }, "ゲームを始める") : null);
 }
 
-function topicPanel(g, host) {
+function topicPanel(g) {
   const t = g.topic || {};
-  const canChange = host && g.status === "play" && !arr(g.pile).length;
   return h("section", { class: "topic" },
     h("div", { class: "head" },
       h("span", { class: "label" }, `レベル ${g.level}　・　ひとり ${g.level} 枚`),
-      h("span", { class: "life", title: "ライフ", "aria-label": `ライフ 残り${g.life}` }, hearts(g.life, g.maxLife || g.life))),
+      h("span", { class: "miss-count" }, g.miss ? `ミス ${g.miss} 回` : "ミスなし")),
     h("span", { class: "label" }, "お題"),
     h("h2", null, t.t || ""),
     h("div", { class: "scale" },
       h("span", null, h("b", null, "1"), " ", t.lo || ""),
       h("span", { class: "bar" }),
-      h("span", null, t.hi || "", " ", h("b", null, "100"))),
-    canChange && !S.customTopic ? h("div", { class: "row" },
-      h("button", { class: "btn small", type: "button", onclick: () => changeTopic(pickTopic(settings().cat, t.t)) }, "お題を変える"),
-      h("button", { class: "btn small ghost", type: "button", onclick: () => { S.customTopic = true; render(); } }, "自分でお題を作る")) : null,
-    canChange && S.customTopic ? h("div", { class: "field" },
-      h("input", { id: "ct-t", class: "text", maxlength: "40", placeholder: "お題（例：子どものころの宝物）" }),
-      h("div", { class: "row" },
-        h("input", { id: "ct-lo", class: "text", maxlength: "16", placeholder: "1 のイメージ", style: "flex:1;width:auto" }),
-        h("input", { id: "ct-hi", class: "text", maxlength: "16", placeholder: "100 のイメージ", style: "flex:1;width:auto" })),
-      h("div", { class: "row" },
-        h("button", { class: "btn small primary", type: "button", onclick: () => {
-          const v = id => clip(document.getElementById(id).value.trim(), 40);
-          if (!v("ct-t")) return;
-          changeTopic({ t: v("ct-t"), lo: v("ct-lo") || "小さい", hi: v("ct-hi") || "大きい" });
-        } }, "このお題にする"),
-        h("button", { class: "btn small ghost", type: "button", onclick: () => { S.customTopic = false; render(); } }, "やめる"))) : null);
+      h("span", null, t.hi || "", " ", h("b", null, "100"))));
 }
 
 function room() {
@@ -477,22 +444,19 @@ function room() {
   if (!g) {
     kids.push(host ? settingsPanel(false) : h("p", { class: "center" }, `${r.hostName}さんがゲームを始めるのを待っています。`));
   } else {
-    kids.push(topicPanel(g, host));
+    kids.push(topicPanel(g));
     const pile = arr(g.pile);
     kids.push(h("h3", { class: "section-title" }, "場に出たカード"),
       h("div", { class: "table" }, pile.length ? pile.map(p => cardEl(p.n, p.name, p.hint, p.miss ? "miss" : "")) : h("span", { class: "empty" }, "まだ出ていません。いちばん小さいと思う人から出しましょう。")));
 
     if (g.status !== "play") {
-      const leftover = Object.values(g.hands || {}).flatMap(hd => arr(hd.cards).filter(x => x.state === "hand").map(x => ({ ...x, name: hd.name }))).sort((a, b) => a.n - b.n);
       const canNext = g.level + 1 <= maxLevel(members.length);
-      kids.push(h("section", { class: "result " + g.status },
-        h("h3", null, g.status === "clear" ? `レベル ${g.level} クリア！` : "ゲームオーバー"),
-        g.status === "clear" ? h("p", { style: "margin:0" }, `残りライフ ${g.life}。` + (canNext ? "次はひとり1枚ずつ増えます。" : "これ以上レベルを上げられません。完全クリアです！"))
-          : h("p", { style: "margin:0" }, `レベル ${g.level} で力尽きました。` + (g.best ? `これまでの最高はレベル ${g.best} クリアです。` : "")),
-        leftover.length ? [h("span", { class: "label" }, "出せなかったカード"), h("div", { class: "table" }, leftover.map(x => cardEl(x.n, x.name, x.hint)))] : null,
+      kids.push(h("section", { class: "result clear" },
+        h("h3", null, g.miss ? `レベル ${g.level} おしまい（ミス ${g.miss} 回）` : `レベル ${g.level} パーフェクト！`),
+        h("p", { style: "margin:0" }, canNext ? "次はひとり1枚ずつ増えます。" : "これ以上レベルを上げられません。完全制覇です！"),
         host ? h("div", { class: "row" },
-          g.status === "clear" && canNext ? h("button", { class: "btn primary", type: "button", onclick: nextLevel }, `レベル ${g.level + 1} へ`) : null,
-          h("button", { class: g.status === "clear" && canNext ? "btn" : "btn primary", type: "button", onclick: startGame }, "レベル1からやり直す"))
+          canNext ? h("button", { class: "btn primary", type: "button", onclick: nextLevel }, `レベル ${g.level + 1} へ`) : null,
+          h("button", { class: canNext ? "btn" : "btn primary", type: "button", onclick: startGame }, "レベル1からやり直す"))
           : h("p", { class: "note" }, `${r.hostName}さんが次を始めるのを待っています。`)));
     }
 
