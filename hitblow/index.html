@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ヒット&amp;ブロー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-screen app. Lobby = name + passphrase + digit count; room = two player cards, two guess columns, number pad pinned at the bottom. */
+:root {
+  --bg: #eceef3; --surface: #f9fafc; --sunk: #dfe3ec; --ink: #1a2233; --muted: #5a6478; --line: #c8cfdc;
+  --accent: #2f55b0; --accent-ink: #ffffff; --accent-soft: #dbe4f7;
+  --hit: #c24e14; --hit-bg: #f8e2d4; --blow: #2c6bb3; --blow-bg: #d9e7f6;
+  --win: #2f7d4b; --win-bg: #dcefe2; --no: #b24a3a; --no-bg: #f6e0db; --wait-bg: #f3ead0;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f131c; --surface: #171d29; --sunk: #0b0e15; --ink: #e0e5ef; --muted: #96a0b4; --line: #2a3346;
+    --accent: #7c9cf0; --accent-ink: #0b1430; --accent-soft: #1f2a46;
+    --hit: #f59a66; --hit-bg: #3d2416; --blow: #7fb2ee; --blow-bg: #182c45;
+    --win: #7fd49b; --win-bg: #183526; --no: #f0927f; --no-bg: #3a201b; --wait-bg: #352d14; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+[hidden] { display: none !important; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app { height: 100%; display: flex; flex-direction: column; max-width: 760px; margin: 0 auto;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 14px; font-weight: 500; }
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.btn.ghost { background: transparent; }
+.btn.small { padding: 3px 10px; font-size: 13px; }
+.btn.armed { background: var(--no-bg); color: var(--no); border-color: var(--no); }
+.label { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.err { color: var(--no); font-size: 13px; margin: 0; }
+.muted { color: var(--muted); }
+input.text { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.banner { background: var(--wait-bg); color: var(--ink); border-radius: 10px; padding: 8px 12px; font-size: 13px; margin: 0; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 14px; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button:disabled { cursor: default; }
+
+.lobby { flex: 1; min-height: 0; overflow-y: auto; padding-block: 28px 40px; display: flex; flex-direction: column; gap: 24px; }
+.credit { margin: 0; font-size: 12px; color: var(--muted); text-align: center; letter-spacing: .05em; }
+.brand { display: flex; flex-direction: column; gap: 6px; }
+.brand h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(34px, 8vw, 50px); line-height: 1.15; margin: 0; letter-spacing: .02em; }
+.brand h1 .amp { color: var(--accent); }
+.brand .tag { color: var(--accent); font-size: 13px; letter-spacing: .25em; font-weight: 700; }
+.brand p { margin: 4px 0 0; max-width: 34em; color: var(--muted); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel h2 { font-size: 18px; margin: 0; }
+.rules { margin: 0; padding-left: 1.3em; color: var(--muted); font-size: 14px; }
+.example { display: flex; flex-direction: column; gap: 4px; background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.example .digits { font-size: 18px; }
+
+.top { flex: none; display: flex; align-items: center; gap: 8px; padding-block: 12px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.top .name { font-family: var(--font-display); font-size: 17px; }
+.top .where { color: var(--muted); font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.top .spacer { flex: 1; }
+.main { flex: 1; min-height: 0; overflow-y: auto; padding-block: 12px; display: flex; flex-direction: column; gap: 12px; }
+.status { border-radius: 12px; padding: 10px 14px; background: var(--accent-soft); font-weight: 700; text-align: center; }
+.status.wait { background: var(--wait-bg); }
+.status.mine { background: var(--accent); color: var(--accent-ink); }
+.status small { display: block; font-weight: 500; font-size: 13px; }
+.status .pass { font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .05em; }
+.players { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pcard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pcard.turn { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.pcard .who { display: flex; align-items: center; gap: 6px; font-weight: 700; min-width: 0; }
+.pcard .who span.n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--win); flex: none; }
+.dot.off { background: var(--line); }
+.pcard .sec { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.digits { font-family: var(--font-display); font-size: 22px; letter-spacing: .18em; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.digits.hidden { color: var(--muted); }
+.board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.col h3 { margin: 0 0 2px; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g { display: flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px 8px; min-width: 0; }
+.g .no { font-size: 11px; color: var(--muted); width: 1.6em; flex: none; }
+.g .digits { font-size: 17px; letter-spacing: .12em; flex: 1; min-width: 0; }
+.g.win { border-color: var(--win); background: var(--win-bg); }
+.res { display: flex; gap: 3px; flex: none; }
+.chip { font-weight: 700; font-size: 12px; padding: 0 7px; border-radius: 999px; white-space: nowrap; }
+.chip.hit { color: var(--hit); background: var(--hit-bg); }
+.chip.blow { color: var(--blow); background: var(--blow-bg); }
+.chip.win { color: var(--win); background: transparent; border: 1px solid var(--win); }
+.chip.pend { color: var(--muted); background: var(--sunk); font-weight: 500; }
+.empty { font-size: 13px; color: var(--muted); padding: 4px 2px; }
+.result { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; align-items: center; text-align: center; }
+.result h2 { font-family: var(--font-display); font-weight: 400; font-size: 28px; margin: 0; }
+.result.won h2 { color: var(--win); }
+.result.lost h2 { color: var(--no); }
+.result p { margin: 0; color: var(--muted); }
+
+.dock { flex: none; border-top: 1px solid var(--line); padding-block: 10px calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; }
+.slots { display: flex; gap: 8px; justify-content: center; }
+.slot { width: 46px; height: 52px; border: 2px dashed var(--line); border-radius: 10px; display: grid; place-items: center; font-family: var(--font-display); font-size: 26px; }
+.slot.on { border-style: solid; border-color: var(--accent); background: var(--surface); }
+.keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.key { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; height: 44px; font-family: var(--font-display); font-size: 20px; padding: 0; }
+.key:disabled { opacity: .3; cursor: default; }
+.key.fn { font-family: var(--font-body); font-size: 13px; white-space: nowrap; }
+.key.memo1 { text-decoration: line-through; color: var(--muted); }
+.key.memo2 { border-color: var(--hit); color: var(--hit); }
+.go { height: 44px; padding: 0; white-space: nowrap; }
+.memo { display: flex; gap: 6px; align-items: center; }
+.memo .label { flex: none; }
+.memo .ms { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; flex: 1; }
+.memo button { border: 1px solid var(--line); background: transparent; border-radius: 6px; padding: 0; height: 28px; font-size: 14px; font-weight: 700; }
+.memo button.m1 { color: var(--muted); text-decoration: line-through; background: var(--sunk); }
+.memo button.m2 { color: var(--hit); border-color: var(--hit); background: var(--hit-bg); }
+.hint { font-size: 12px; color: var(--muted); text-align: center; margin: 0; }
+.center { margin: auto; text-align: center; padding: 24px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app" id="app"><p class="center">読み込み中…</p></div>
+<script src="../firebase-config.js"></script>
+<script type="module">
+const $app = document.getElementById("app");
+const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
+const ROOM_TTL = 12 * 60 * 60 * 1000;
+
+// ---------- helpers ----------
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat(Infinity)) if (k != null && k !== false) el.append(k instanceof Node ? k : String(k));
+  return el;
+}
+const local = {
+  get(k, d) { try { const v = localStorage.getItem("hitblow:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("hitblow:" + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("hitblow:" + k); } catch {} },
+};
+const rid = () => Array.from(crypto.getRandomValues(new Uint8Array(10)), b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+const clip = (s, n) => String(s ?? "").slice(0, n);
+// The passphrase itself is never stored; rooms are keyed by a hash of it ("hb" keeps them apart from うみがめ亭 rooms).
+function roomKey(pass) {
+  const s = pass.normalize("NFKC").trim().toLowerCase().replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60)).replace(/\s+/g, "");
+  let a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+  for (const ch of s) { const c = ch.codePointAt(0); a = Math.imul(a ^ c, 0x01000193) >>> 0; b = Math.imul(b ^ c, 0x5bd1e995) >>> 0; b ^= b >>> 13; }
+  return "hb" + a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0");
+}
+const validNum = (s, n) => s.length === n && /^\d+$/.test(s) && new Set(s).size === n;
+function score(secret, guess) {
+  let hit = 0, blow = 0;
+  for (let i = 0; i < guess.length; i++) { if (guess[i] === secret[i]) hit++; else if (secret.includes(guess[i])) blow++; }
+  return { hit, blow };
+}
+
+// ---------- backends ----------
+async function firebaseBackend(cfg) {
+  const app = await import(FB + "firebase-app.js");
+  const d = await import(FB + "firebase-database.js");
+  const db = d.getDatabase(app.initializeApp(cfg));
+  const r = p => d.ref(db, p);
+  return {
+    demo: false,
+    listen: (p, cb, onErr) => d.onValue(r(p), s => cb(s.val()), e => onErr && onErr(e)),
+    get: async p => (await d.get(r(p))).val(),
+    set: (p, v) => d.set(r(p), v),
+    update: (p, v) => d.update(r(p), v),
+    remove: p => d.remove(r(p)),
+    push: async (p, v) => { const k = d.push(r(p)); await d.set(k, v); return k.key; },
+    onDisconnectRemove: p => d.onDisconnect(r(p)).remove(),
+  };
+}
+// Demo mode: the "database" is localStorage, shared only between tabs of this browser.
+function demoBackend() {
+  const KEY = "hitblow-demo-db", subs = new Set();
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+  const parts = p => p.split("/").filter(Boolean);
+  const at = (t, p) => parts(p).reduce((o, k) => (o == null ? null : o[k] ?? null), t);
+  const put = (t, p, v) => {
+    const ks = parts(p); let o = t;
+    for (const k of ks.slice(0, -1)) { if (typeof o[k] !== "object" || o[k] === null) o[k] = {}; o = o[k]; }
+    if (v == null) delete o[ks[ks.length - 1]]; else o[ks[ks.length - 1]] = JSON.parse(JSON.stringify(v));
+  };
+  const notify = () => { const t = load(); subs.forEach(s => { const v = at(t, s.p), j = JSON.stringify(v); if (j !== s.last) { s.last = j; s.cb(v); } }); };
+  const write = fn => { const t = load(); fn(t); try { localStorage.setItem(KEY, JSON.stringify(t)); } catch {} ; notify(); };
+  addEventListener("storage", e => { if (e.key === KEY) notify(); });
+  let seq = 0;
+  return {
+    demo: true,
+    listen(p, cb) { const s = { p, cb, last: undefined }; subs.add(s); setTimeout(() => { const v = at(load(), p); s.last = JSON.stringify(v); cb(v); }); return () => subs.delete(s); },
+    get: async p => at(load(), p),
+    set: async (p, v) => write(t => put(t, p, v)),
+    update: async (p, obj) => write(t => { for (const [k, v] of Object.entries(obj)) put(t, p + "/" + k, v); }),
+    remove: async p => write(t => put(t, p, null)),
+    push: async (p, v) => { const k = Date.now().toString(36).padStart(9, "0") + (seq++).toString(36).padStart(3, "0") + rid().slice(0, 4); write(t => put(t, p + "/" + k, v)); return k; },
+    onDisconnectRemove() {},
+  };
+}
+
+// ---------- state ----------
+// A player's secret number lives only in their own browser. Their client scores the
+// opponent's guesses against it, and publishes it only once the game is over.
+const S = {
+  db: null, screen: "lobby", err: "", busy: false,
+  name: local.get("name", "") || (() => { try { return JSON.parse(localStorage.getItem("umigame:name")) || ""; } catch { return ""; } })(),
+  pid: null, key: null, pass: "", room: undefined, digits: local.get("digits", 4), draft: "", draftFor: "",
+};
+let unsubRoom = null;
+const judged = new Set(), revealed = new Set();
+const roomPath = p => `rooms/${S.key}` + (p ? "/" + p : "");
+const touch = () => ({ updatedAt: Date.now() });
+const secretOf = round => local.get(`secret:${S.key}:${round}:${S.pid}`, null);
+
+// Everything the screen needs, derived from the room snapshot.
+function derive() {
+  const r = S.room; if (!r) return null;
+  const g = r.game || { round: 1, digits: r.digits || 4 };
+  const D = g.digits || 4, host = r.hostId, guest = r.guestId || null;
+  const names = { [host]: r.hostName || "部屋を作った人" };
+  if (guest) names[guest] = r.guestName || "相手";
+  const order = g.round % 2 === 1 ? [host, guest] : [guest, host];
+  const guesses = Object.entries(g.guesses || {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, x]) => ({ id, ...x }));
+  const ready = g.ready || {};
+  const role = S.pid === host ? "host" : guest && S.pid === guest ? "guest" : "watch";
+  const me = role === "watch" ? host : S.pid, opp = me === host ? guest : host;
+  const count = { [host]: 0 }, hit = {};
+  if (guest) count[guest] = 0;
+  for (const x of guesses) { count[x.by] = (count[x.by] || 0) + 1; if (x.hit === D && !hit[x.by]) hit[x.by] = count[x.by]; }
+  const pending = guesses.find(x => x.hit == null) || null;
+  let phase = !guest ? "wait" : !ready[host] || !ready[guest] ? "set" : "play";
+  // The second player always gets the same number of turns as the first, so a hit by the first player leaves one last chance.
+  if (phase === "play" && !pending && Object.keys(hit).length && count[order[0]] === count[order[1]]) phase = "over";
+  const turn = order[guesses.length % 2];
+  const online = id => !!(r.members && r.members[id]);
+  return { r, g, D, host, guest, names, order, guesses, ready, role, me, opp, count, hit, pending, phase, turn, online };
+}
+function padMode(v) {
+  if (!v || v.role === "watch") return null;
+  if (v.phase === "set" && !v.ready[S.pid]) return "set";
+  if (v.phase === "play" && v.turn === S.pid && !v.pending) return "guess";
+  return null;
+}
+
+// Runs after every room update: score guesses aimed at my number, reveal my number when the game ends.
+// The sets only block duplicate writes while one is in flight, so a lost write is retried on the next update.
+function effects() {
+  const v = derive(); if (!v || v.role === "watch") return;
+  const sec = secretOf(v.g.round); if (!sec) return;
+  for (const x of v.guesses) {
+    if (x.by === S.pid || x.hit != null || judged.has(x.id)) continue;
+    judged.add(x.id);
+    S.db.update(roomPath("game/guesses/" + x.id), score(sec, String(x.text))).finally(() => judged.delete(x.id));
+  }
+  const rk = S.key + ":" + v.g.round;
+  if (v.phase === "over" && !(v.g.reveal || {})[S.pid] && !revealed.has(rk)) {
+    revealed.add(rk);
+    S.db.update(roomPath("game/reveal"), { [S.pid]: sec }).finally(() => revealed.delete(rk));
+  }
+}
+
+// ---------- lobby actions ----------
+function readLobby() {
+  S.name = clip(document.getElementById("name").value.trim(), 16);
+  S.pass = clip(document.getElementById("pass").value, 40);
+  local.set("name", S.name);
+  if (!S.name) return fail("名前を入れてください。");
+  if (S.pass.trim().length < 3) return fail("合言葉は3文字以上にしてください。");
+  return true;
+}
+function fail(msg) { S.err = msg; S.busy = false; render(); return false; }
+async function createRoom() {
+  if (!readLobby()) return;
+  S.busy = true; S.err = ""; render();
+  try {
+    const key = roomKey(S.pass), now = Date.now();
+    const cur = await S.db.get("rooms/" + key);
+    if (cur && cur.hostId !== S.pid && now - (cur.updatedAt || 0) < ROOM_TTL) return fail("この合言葉の部屋はもう使われています。別の合言葉にしてください。");
+    await S.db.set("rooms/" + key, { hostId: S.pid, hostName: S.name, digits: S.digits, game: { round: 1, digits: S.digits }, createdAt: now, updatedAt: now });
+    enter(key);
+  } catch (e) { fail("部屋を作れませんでした。通信状態を確認してください。"); console.error(e); }
+}
+async function joinRoom() {
+  if (!readLobby()) return;
+  S.busy = true; S.err = ""; render();
+  try {
+    const key = roomKey(S.pass);
+    const cur = await S.db.get("rooms/" + key);
+    if (!cur) return fail("その合言葉の部屋は見つかりません。相手に合言葉を確かめてください。");
+    if (cur.hostId !== S.pid && !cur.guestId) await S.db.update("rooms/" + key, { guestId: S.pid, guestName: S.name, ...touch() });
+    enter(key);
+  } catch (e) { fail("部屋に入れませんでした。通信状態を確認してください。"); console.error(e); }
+}
+function enter(key) {
+  Object.assign(S, { key, screen: "room", room: undefined, busy: false, err: "", draft: "", draftFor: "" });
+  local.set("last", { pass: S.pass });
+  S.db.set(`rooms/${key}/members/${S.pid}`, { name: S.name, joinedAt: Date.now() }).catch(() => {});
+  S.db.onDisconnectRemove(`rooms/${key}/members/${S.pid}`);
+  if (unsubRoom) unsubRoom();
+  unsubRoom = S.db.listen("rooms/" + key, v => {
+    if (v == null && S.room !== undefined) { leave("部屋が閉じられました。"); return; }
+    S.room = v; render(); effects();
+  }, () => leave("部屋を読み込めませんでした。"));
+  render();
+}
+function leave(msg) {
+  if (unsubRoom) unsubRoom(); unsubRoom = null;
+  if (S.key && S.room) S.db.remove(`rooms/${S.key}/members/${S.pid}`).catch(() => {});
+  Object.assign(S, { screen: "lobby", key: null, room: undefined, err: msg || "" });
+  render();
+}
+
+// ---------- room actions ----------
+async function setSecret() {
+  const v = derive(); if (padMode(v) !== "set" || !validNum(S.draft, v.D)) return;
+  local.set(`secret:${S.key}:${v.g.round}:${S.pid}`, S.draft);
+  S.draft = "";
+  await S.db.update(roomPath("game/ready"), { [S.pid]: true });
+  S.db.update(roomPath(), touch());
+}
+async function guess() {
+  const v = derive(); if (padMode(v) !== "guess" || !validNum(S.draft, v.D)) return;
+  const text = S.draft; S.draft = ""; render();
+  try { await S.db.push(roomPath("game/guesses"), { by: S.pid, text, at: Date.now() }); S.db.update(roomPath(), touch()); }
+  catch (e) { S.draft = text; S.err = "送れませんでした。もう一度試してください。"; render(); }
+}
+async function nextRound() {
+  const v = derive();
+  await S.db.update(roomPath(), { game: { round: v.g.round + 1, digits: v.r.digits || v.D }, ...touch() });
+}
+// Digit count can change between games, or before anyone has picked a number.
+const canSetDigits = v => v.role === "host" && (v.phase === "wait" || v.phase === "over" || (v.phase === "set" && !Object.keys(v.ready).length));
+async function setDigits(n) {
+  const v = derive(); if (!canSetDigits(v)) return;
+  const upd = { digits: n, ...touch() };
+  if (v.phase !== "over") upd["game/digits"] = n;
+  S.digits = n; local.set("digits", n);
+  await S.db.update(roomPath(), upd);
+}
+async function closeRoom() { await S.db.remove(roomPath()); }
+
+function typeKey(k) {
+  const v = derive(), mode = padMode(v); if (!mode) return;
+  if (k === "back") S.draft = S.draft.slice(0, -1);
+  else if (k === "clear") S.draft = "";
+  else if (/^\d$/.test(k) && !S.draft.includes(k) && S.draft.length < v.D) S.draft += k;
+  render();
+}
+function toggleMemo(d) {
+  const v = derive(), k = `memo:${S.key}:${v.g.round}:${S.pid}`, m = local.get(k, {});
+  m[d] = ((m[d] || 0) + 1) % 3; local.set(k, m); render();
+}
+addEventListener("keydown", e => {
+  if (S.screen !== "room" || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  const v = derive(), mode = padMode(v); if (!mode) return;
+  if (/^\d$/.test(e.key)) { typeKey(e.key); e.preventDefault(); }
+  else if (e.key === "Backspace") { typeKey("back"); e.preventDefault(); }
+  else if (e.key === "Enter" && validNum(S.draft, v.D)) { (mode === "set" ? setSecret : guess)(); e.preventDefault(); }
+});
+
+// Two-step button: first press arms it, second press within 4s runs it.
+function confirmBtn(label, armed, run, cls = "btn small ghost") {
+  const b = h("button", { class: cls, type: "button" }, label); let t;
+  b.addEventListener("click", () => {
+    if (b.classList.contains("armed")) { clearTimeout(t); b.classList.remove("armed"); b.textContent = label; run(); return; }
+    b.classList.add("armed"); b.textContent = armed;
+    t = setTimeout(() => { b.classList.remove("armed"); b.textContent = label; }, 4000);
+  });
+  return b;
+}
+
+// ---------- render ----------
+function render() {
+  const main = document.querySelector(".main");
+  const nearBottom = !main || main.scrollHeight - main.scrollTop - main.clientHeight < 80;
+  const keep = {};
+  document.querySelectorAll("input[id]").forEach(el => (keep[el.id] = el.value));
+  const act = document.activeElement, focusId = act && act.id;
+  $app.replaceChildren(S.screen === "lobby" ? lobby() : room());
+  for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (el && v != null) el.value = v; }
+  const nm = document.querySelector(".main"); if (nm && nearBottom) nm.scrollTop = nm.scrollHeight;
+  const back = focusId && document.getElementById(focusId);
+  if (back) back.focus({ preventScroll: true });
+}
+
+function digitSeg(value, onPick, disabled) {
+  return h("div", { class: "seg", role: "group", "aria-label": "桁数" },
+    [3, 4].map(n => h("button", { type: "button", "aria-pressed": String(value === n), disabled, onclick: () => onPick(n) }, `${n}桁`)));
+}
+function lobby() {
+  const last = local.get("last", {});
+  return h("main", { class: "lobby" },
+    h("header", { class: "brand" },
+      h("span", { class: "tag" }, "ふたりで数当て"),
+      h("h1", null, "ヒット", h("span", { class: "amp" }, "&"), "ブロー"),
+      h("p", null, "おたがいに秘密の数字を決めて、相手の数字を先に当てたほうが勝ち。予想するたびに「ヒット」と「ブロー」の数がヒントとして返ってきます。")),
+    S.db && S.db.demo ? h("p", { class: "banner" }, "デモモードです。データベースの設定がまだなので、この端末の別タブ同士でだけ遊べます。") : null,
+    h("section", { class: "panel" },
+      h("h2", null, "部屋に入る"),
+      h("label", { class: "field" }, h("span", { class: "label" }, "あなたの名前"),
+        h("input", { id: "name", class: "text", maxlength: "16", placeholder: "ニックネーム", value: S.name, autocomplete: "nickname" })),
+      h("label", { class: "field" }, h("span", { class: "label" }, "合言葉"),
+        h("input", { id: "pass", class: "text", maxlength: "40", placeholder: "例: しろくま123", value: last.pass || "", autocomplete: "off" }),
+        h("span", { class: "muted", style: "font-size:13px" }, "同じ合言葉を入れた2人が、同じ部屋で対戦します。ひらがな・カタカナ、全角・半角の違いは区別しません。")),
+      h("div", { class: "field" }, h("span", { class: "label" }, "桁数（部屋を作るとき）"),
+        digitSeg(S.digits, n => { S.digits = n; local.set("digits", n); render(); }, S.busy)),
+      S.err ? h("p", { class: "err", role: "alert" }, S.err) : null,
+      h("div", { class: "row" },
+        h("button", { class: "btn primary", type: "button", disabled: S.busy || !S.db, onclick: joinRoom }, "部屋に入る"),
+        h("button", { class: "btn", type: "button", disabled: S.busy || !S.db, onclick: createRoom }, "部屋を作る"))),
+    h("section", { class: "panel" },
+      h("h2", null, "遊び方"),
+      h("ol", { class: "rules" },
+        h("li", null, "1人が合言葉を決めて部屋を作り、相手に合言葉を伝えます。相手は同じ合言葉で「部屋に入る」を押します。"),
+        h("li", null, "2人とも、3桁か4桁の秘密の数字を決めます。同じ数字は2回使えません（0から始まってもOK）。"),
+        h("li", null, "交代で相手の数字を予想します。数字も場所も合っていれば「ヒット」、数字は合っているけど場所がちがえば「ブロー」です。"),
+        h("li", null, "先に全部ヒットさせたほうが勝ち。先攻が当てたら、後攻にもラスト1回のチャンスがあり、当てれば引き分けです。"),
+        h("li", null, "先攻・後攻は1回ごとに交代します。")),
+      h("div", { class: "example" },
+        h("span", null, "例：相手の数字が ", h("b", { class: "digits" }, "1234"), " のとき"),
+        h("span", null, h("b", { class: "digits" }, "1325"), " と予想すると → ", h("span", { class: "chip hit" }, "1ヒット"), " ", h("span", { class: "chip blow" }, "2ブロー")),
+        h("span", { class: "muted", style: "font-size:13px" }, "1は場所も合っている（ヒット）、3と2は数字だけ合っている（ブロー）、5は入っていません。"))),
+    h("p", { class: "credit" }, "開発：tenwalker"));
+}
+
+function chips(x, D) {
+  if (x.hit == null) return h("span", { class: "res" }, h("span", { class: "chip pend" }, "判定中"));
+  if (x.hit === D) return h("span", { class: "res" }, h("span", { class: "chip win" }, "正解!"));
+  return h("span", { class: "res" }, h("span", { class: "chip hit" }, `${x.hit}H`), h("span", { class: "chip blow" }, `${x.blow}B`));
+}
+function column(v, pid, title) {
+  const list = v.guesses.filter(x => x.by === pid);
+  return h("div", { class: "col" },
+    h("h3", null, title),
+    list.length ? list.map((x, i) => h("div", { class: "g" + (x.hit === v.D ? " win" : "") },
+      h("span", { class: "no" }, i + 1), h("span", { class: "digits" }, x.text), chips(x, v.D)))
+      : h("div", { class: "empty" }, "まだ予想していません"));
+}
+function playerCard(v, pid) {
+  const isMe = pid === S.pid, playing = v.phase === "play" || v.phase === "over";
+  const reveal = (v.g.reveal || {})[pid];
+  let num;
+  if (isMe) {
+    const sec = secretOf(v.g.round);
+    num = sec ? h("span", { class: "digits" }, sec) : h("span", { class: "digits hidden" }, "－".repeat(v.D));
+  } else num = reveal ? h("span", { class: "digits" }, reveal) : h("span", { class: "digits hidden" }, "？".repeat(v.D));
+  const status = !pid ? "まだいません" : v.phase === "set" ? (v.ready[pid] ? "数字を決めました" : "数字を考え中…") : null;
+  return h("div", { class: "pcard" + (v.phase === "play" && v.turn === pid && pid ? " turn" : "") },
+    h("div", { class: "who" },
+      pid ? h("span", { class: "dot" + (v.online(pid) ? "" : " off"), title: v.online(pid) ? "オンライン" : "オフライン" }) : null,
+      h("span", { class: "n" }, pid ? v.names[pid] : "相手"),
+      isMe ? h("span", { class: "badge" }, "あなた") : null),
+    h("div", { class: "sec" }, num,
+      pid && playing ? h("span", { class: "badge" }, v.order[0] === pid ? "先攻" : "後攻") : null),
+    status ? h("span", { class: "muted", style: "font-size:13px" }, status) : null);
+}
+function statusLine(v) {
+  const nm = id => `${v.names[id]}さん`;
+  if (v.phase === "wait") return h("div", { class: "status wait" }, "相手が入るのを待っています",
+    h("small", null, "合言葉 ", h("span", { class: "pass" }, S.pass || "（部屋を作ったときの合言葉）"), " を相手に伝えてください"));
+  if (v.phase === "set") {
+    if (v.role === "watch") return h("div", { class: "status wait" }, "2人が秘密の数字を決めています…");
+    if (!v.ready[S.pid]) return h("div", { class: "status mine" }, `秘密の数字を決めてください（${v.D}桁）`, h("small", null, "同じ数字は使えません。相手には見えません。"));
+    return h("div", { class: "status wait" }, `${nm(v.opp)}が数字を決めるのを待っています…`);
+  }
+  if (v.phase === "play") {
+    const lastChance = Object.keys(v.hit).length > 0;
+    if (v.pending) {
+      const target = v.pending.by === v.host ? v.guest : v.host;
+      return h("div", { class: "status wait" }, "判定中…",
+        !v.online(target) ? h("small", null, `${nm(target)}がオフラインです。戻ってくると判定されます。`) : null);
+    }
+    if (v.turn === S.pid) return h("div", { class: "status mine" }, lastChance ? "ラストチャンス！" : "あなたの番です",
+      h("small", null, lastChance ? "相手に当てられました。ここで当てれば引き分けです。" : `${v.count[S.pid] + 1}回目の予想を入れてください`));
+    return h("div", { class: "status" }, `${nm(v.turn)}の番です`, lastChance ? h("small", null, "ラストチャンス中") : null);
+  }
+  return null;
+}
+function resultCard(v) {
+  const winners = Object.keys(v.hit);
+  const draw = winners.length === 2;
+  let title, cls = "";
+  if (draw) title = "引き分け";
+  else if (v.role === "watch") title = `${v.names[winners[0]]}さんの勝ち`;
+  else if (winners[0] === S.pid) { title = "あなたの勝ち！"; cls = " won"; }
+  else { title = "負け…"; cls = " lost"; }
+  const detail = winners.map(id => `${v.names[id]}さん：${v.hit[id]}回目で正解`).join("　");
+  return h("section", { class: "result" + cls },
+    h("h2", null, title),
+    h("p", null, detail),
+    v.role !== "watch" ? h("button", { class: "btn primary", type: "button", onclick: nextRound }, "もう一度（先攻・後攻を交代）") : null);
+}
+function dock(v) {
+  const mode = padMode(v);
+  const parts = [];
+  if (canSetDigits(v)) parts.push(h("div", { class: "row", style: "justify-content:center" },
+    h("span", { class: "label" }, v.phase === "over" ? "次の勝負の桁数" : "桁数"), digitSeg(v.r.digits || v.D, setDigits)));
+  if (mode) {
+    const key = mode + ":" + S.key + ":" + v.g.round + ":" + v.guesses.length;
+    if (S.draftFor !== key) { S.draftFor = key; S.draft = ""; }
+    const d = S.draft, memo = local.get(`memo:${S.key}:${v.g.round}:${S.pid}`, {});
+    if (S.err) parts.push(h("p", { class: "err", role: "alert" }, S.err));
+    parts.push(h("div", { class: "slots", "aria-label": "入力中の数字" },
+      Array.from({ length: v.D }, (_, i) => h("span", { class: "slot" + (d[i] ? " on" : "") }, d[i] || ""))));
+    parts.push(h("div", { class: "keys" },
+      "1234567890".split("").map(k => h("button", { class: "key" + (mode === "guess" && memo[k] ? " memo" + memo[k] : ""), type: "button", disabled: d.includes(k) || d.length >= v.D, onclick: () => typeKey(k) }, k)),
+      h("button", { class: "key fn", type: "button", disabled: !d.length, onclick: () => typeKey("back") }, "消す"),
+      h("button", { class: "btn primary go", type: "button", style: "grid-column: span 1", disabled: !validNum(d, v.D), onclick: mode === "set" ? setSecret : guess }, mode === "set" ? "決定" : "予想")));
+  }
+  if (v.role !== "watch" && (v.phase === "play" || mode === "set")) {
+    if (v.phase === "play") {
+      const memo = local.get(`memo:${S.key}:${v.g.round}:${S.pid}`, {});
+      parts.push(h("div", { class: "memo" }, h("span", { class: "label" }, "メモ"),
+        h("div", { class: "ms" }, "0123456789".split("").map(k => h("button", { type: "button", class: memo[k] ? "m" + memo[k] : "", title: "押すたびに ×（なさそう）→ ○（ありそう）→ なし", onclick: () => toggleMemo(k) }, k)))));
+      parts.push(h("p", { class: "hint" }, "メモは自分にだけ見えます。押すたびに ×（なさそう）→ ○（ありそう）→ なし と変わります。"));
+    }
+  }
+  return parts.length ? h("div", { class: "dock" }, parts) : null;
+}
+function room() {
+  if (S.room === undefined) return h("p", { class: "center" }, "部屋に入っています…");
+  const v = derive();
+  const left = v.me, right = v.opp;
+  const kids = [statusLine(v)];
+  if (v.phase === "over") kids.push(resultCard(v));
+  kids.push(h("div", { class: "players" }, playerCard(v, left), playerCard(v, right)));
+  if (v.phase === "play" || v.phase === "over") kids.push(h("div", { class: "board" },
+    column(v, left, v.role === "watch" ? `${v.names[left]}さんの予想` : "あなたの予想"),
+    column(v, right, right ? `${v.names[right]}さんの予想` : "相手の予想")));
+  if (v.role === "watch") kids.push(h("p", { class: "muted", style: "font-size:13px;text-align:center;margin:0" }, "この部屋はもう2人そろっているので、観戦モードです。"));
+  if (v.role !== "watch" && (v.phase === "play" || v.phase === "over") && !secretOf(v.g.round))
+    kids.push(h("p", { class: "err" }, "この端末には自分の秘密の数字が残っていません。相手の予想を判定できないので、「もう一度」で始め直してください。"));
+  return h("div", { style: "display:contents" },
+    h("div", { class: "top" },
+      h("span", { class: "name" }, "ヒット&ブロー"),
+      h("span", { class: "where" }, `${v.D}桁・${v.g.round}戦目`),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn small ghost", type: "button", onclick: () => leave() }, "退出"),
+      v.role === "host" ? confirmBtn("部屋を閉じる", "もう一度押すと削除", closeRoom) : null),
+    h("div", { class: "main", "aria-live": "polite" }, kids),
+    dock(v));
+}
+
+// ---------- boot ----------
+(async () => {
+  const cfg = window.FIREBASE_CONFIG || {};
+  if (!cfg.databaseURL) { try { S.pid = sessionStorage.getItem("hitblow:pid") || rid(); sessionStorage.setItem("hitblow:pid", S.pid); } catch { S.pid = rid(); } }
+  else S.pid = local.get("pid", null) || (() => { const v = rid(); local.set("pid", v); return v; })();
+  try { S.db = cfg.databaseURL ? await firebaseBackend(cfg) : demoBackend(); }
+  catch (e) { console.error(e); S.err = "データベースにつながりませんでした。firebase-config.js の内容を確認してください。"; }
+  render();
+})();
+</script>
+</body>
+</html>
