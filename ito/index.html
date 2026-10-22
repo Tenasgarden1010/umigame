@@ -488,6 +488,9 @@ function room() {
             h("div", { class: "row" }, confirmBtn("このカードを出す", "もう一度押すと出します", () => playCard(c.i), "btn small primary")))))
           : h("p", { class: "note" }, "あなたのカードは全部出しました。みんなを見守りましょう。")));
     }
+    // Someone who left with cards still in hand would stall the reveal forever; point the host to 配り直す.
+    const gone = g.status === "play" ? hands.filter(([pid, hd]) => !(r.members || {})[pid] && arr(hd.cards).some(x => x.state === "hand")).map(([, hd]) => hd.name) : [];
+    if (gone.length) kids.push(h("p", { class: "banner" }, `${gone.join("、")}さんがカードを持ったまま退室しました。` + (host ? "戻ってこないときは「配り直す」を押してください。" : `${r.hostName}さんに配り直してもらいましょう。`)));
     if (host) kids.push(h("div", { class: "row" },
       g.status === "play" ? confirmBtn("配り直す", "もう一度押すと配り直します", redeal) : null),
       settingsPanel(true));
