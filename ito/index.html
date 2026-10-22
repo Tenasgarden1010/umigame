@@ -85,7 +85,8 @@ input.text, select.text { border: 1px solid var(--line); background: var(--bg); 
 .card .who { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; line-height: 1.3; }
 .card .hint { font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
 .card.miss { background: var(--ng-bg); border-color: var(--ng); }
-.card.miss .n { color: var(--ng); text-decoration: line-through; }
+.card.miss .n { color: var(--ng); }
+.card.miss::after { content: "逆"; font-size: 11px; font-weight: 700; color: var(--ng); }
 .card.back { background: var(--card-back); border-color: transparent; color: #fff; justify-content: center; }
 .card.back .n { font-size: 22px; opacity: .8; }
 .empty { font-size: 13px; color: var(--muted); padding: 8px 0; }
@@ -104,6 +105,7 @@ input.text, select.text { border: 1px solid var(--line); background: var(--bg); 
 
 .result { border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .result.clear { background: var(--ok-bg); }
+.result.over { background: var(--ng-bg); }
 .result h3 { font-family: var(--font-display); margin: 0; font-size: 20px; }
 .settings { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
@@ -210,7 +212,7 @@ function demoBackend() {
 const S = {
   db: null, screen: "lobby", err: "", busy: false,
   name: local.get("name", ""), pid: null,
-  key: null, pass: "", room: undefined,
+  key: null, pass: "", room: undefined, count: [1, 2, 3].includes(local.get("count", 1)) ? local.get("count", 1) : 1,
 };
 let unsubRoom = null;
 const isHost = () => S.room && S.room.hostId === S.pid;
@@ -279,30 +281,31 @@ function pickTopic(avoid) {
   const t = list[crypto.getRandomValues(new Uint32Array(1))[0] % list.length];
   return { t: t.t, lo: t.lo, hi: t.hi };
 }
-const maxLevel = n => Math.max(1, Math.floor(100 / Math.max(1, n)));
-// Deal `level` cards to everyone in the room, with a random topic.
-async function deal(level) {
+const maxCount = n => Math.max(1, Math.min(3, Math.floor(100 / Math.max(1, n))));
+// Deal `count` cards (1-3) to everyone in the room, with a random topic.
+// game.level holds the card count and game.miss the number of out-of-order cards found at the reveal.
+async function deal(count) {
   const r = S.room;
   const ms = Object.entries(r.members || {});
   if (!ms.length) return;
-  const lv = Math.min(level, maxLevel(ms.length));
+  const cnt = Math.min(Math.max(1, count | 0), maxCount(ms.length));
   const deck = shuffle(Array.from({ length: 100 }, (_, i) => i + 1));
   const hands = {};
-  for (const [pid, m] of ms) hands[pid] = { name: m.name, cards: deck.splice(0, lv).sort((a, b) => a - b).map(n => ({ n, state: "hand", hint: "" })) };
+  for (const [pid, m] of ms) hands[pid] = { name: m.name, cards: deck.splice(0, cnt).sort((a, b) => a - b).map(n => ({ n, state: "hand", hint: "" })) };
   const prev = game();
   await S.db.update(roomPath(), {
     game: {
-      round: (prev ? prev.round : 0) + 1, level: lv, miss: 0, status: "play",
+      round: (prev ? prev.round : 0) + 1, level: cnt, miss: 0, status: "play",
       topic: pickTopic(prev && prev.topic && prev.topic.t), hands, pile: null,
     },
     ...touch(),
   });
-  sys(`レベル${lv} を配りました（ひとり${lv}枚）`);
+  sys(`カードを配りました（ひとり${cnt}枚）`);
 }
-const startGame = () => deal(1);
-const nextLevel = () => deal(game().level + 1);
+const startGame = () => deal(S.count);
 const redeal = () => deal(game().level);
 
+// Cards stay face down until everyone has played; then the pile is checked in the order it was played.
 async function playCard(i) {
   const pid = S.pid;
   let outcome = null;
@@ -312,24 +315,20 @@ async function playCard(i) {
     const me = g.hands && g.hands[pid]; const cards = me && arr(me.cards);
     if (!cards || !cards[i] || cards[i].state !== "hand") return;
     const c = cards[i], pile = arr(g.pile);
-    const lower = [];
-    for (const [qid, hd] of Object.entries(g.hands)) arr(hd.cards).forEach((x, j) => {
-      if (x.state === "hand" && x.n < c.n && !(qid === pid && j === i)) lower.push({ qid, j, x, name: hd.name });
-    });
-    lower.sort((a, b) => a.x.n - b.x.n);
-    for (const l of lower) { g.hands[l.qid].cards = arr(g.hands[l.qid].cards); g.hands[l.qid].cards[l.j].state = "miss"; pile.push({ n: l.x.n, name: l.name, hint: l.x.hint || "", miss: true }); }
     me.cards = cards; cards[i].state = "played";
-    pile.push({ n: c.n, name: me.name, hint: c.hint || "" });
+    pile.push({ n: c.n, name: me.name, hint: c.hint || "", miss: false });
     g.pile = pile;
-    if (lower.length) g.miss = (g.miss || 0) + 1;
     const left = Object.values(g.hands).some(hd => arr(hd.cards).some(x => x.state === "hand"));
-    g.status = left ? "play" : "clear";
-    outcome = { n: c.n, miss: lower.map(l => `${l.name}の${l.x.n}`), status: g.status, level: g.level };
+    if (!left) {
+      let top = 0, miss = 0;
+      for (const p of pile) { p.miss = p.n < top; if (p.miss) miss++; top = Math.max(top, p.n); }
+      g.miss = miss; g.status = "clear";
+    }
+    outcome = { status: g.status, miss: g.miss || 0 };
     return g;
   });
   if (!outcome) return;
-  if (outcome.miss.length) sys(`${S.name}が ${outcome.n} を出しました。でも ${outcome.miss.join("、")} が小さかった…`);
-  if (outcome.status === "clear") sys(`レベル${outcome.level} おしまい！`);
+  if (outcome.status === "clear") sys(outcome.miss ? `答え合わせ：ゲームオーバー（順番が逆のカード ${outcome.miss} 枚）` : "答え合わせ：成功！ 全部小さい順に並びました");
   S.db.update(roomPath(), touch());
 }
 function saveHint(i, text) {
@@ -399,8 +398,8 @@ function lobby() {
         h("li", null, "ひとりが合言葉を決めて部屋を作り、みんなに合言葉を伝えます。"),
         h("li", null, "全員そろったら、部屋を作った人が「ゲームを始める」を押します。ひとりに数字カードが配られ、お題が出ます。"),
         h("li", null, "自分の数字の大きさを、お題に沿ったたとえで表現します（例：お題「幸せを感じる瞬間」で 90 なら「推しと目が合う」）。声でもチャットでも、カードの「ひとこと」欄でもOK。"),
-        h("li", null, "いちばん小さいと思う人から、カードを出していきます。出したカードより小さい数字を持っている人がいたらミス。そのカードは捨てて、続けます。"),
-        h("li", null, "全員のカードがなくなったらレベル終了。ミスなしならパーフェクトです。レベルが上がるごとに、配られる枚数が1枚ずつ増えます。"))),
+        h("li", null, "いちばん小さいと思う人から、カードを出していきます。出したカードは伏せたまま場に並びます。"),
+        h("li", null, "全員が出し切ったら答え合わせ。全部小さい順に並んでいれば成功、1枚でも逆ならゲームオーバーです。配る枚数は1〜3枚から選べます。"))),
     h("p", { class: "credit" }, "開発：tenwalker"));
 }
 
@@ -418,15 +417,20 @@ function settingsPanel(inGame) {
           h("button", { type: "button", "aria-pressed": String(st.chat), onclick: () => setSetting("chat", true) }, "表示する"),
           h("button", { type: "button", "aria-pressed": String(!st.chat), onclick: () => setSetting("chat", false) }, "表示しない")),
         h("span", { class: "note" }, "集まって／通話しながら遊ぶなら「表示しない」でも大丈夫です。"))),
-    !inGame ? h("button", { class: "btn primary", type: "button", onclick: startGame }, "ゲームを始める") : null);
+    !inGame ? [countPicker(), h("button", { class: "btn primary", type: "button", onclick: startGame }, "ゲームを始める")] : null);
+}
+function countPicker() {
+  return h("div", { class: "field" }, h("span", { class: "label" }, "ひとりに配る枚数"),
+    h("div", { class: "seg", role: "group", "aria-label": "配る枚数" },
+      [1, 2, 3].map(n => h("button", { type: "button", "aria-pressed": String(S.count === n), onclick: () => { S.count = n; local.set("count", n); render(); } }, `${n}枚`))));
 }
 
 function topicPanel(g) {
   const t = g.topic || {};
   return h("section", { class: "topic" },
     h("div", { class: "head" },
-      h("span", { class: "label" }, `レベル ${g.level}　・　ひとり ${g.level} 枚`),
-      h("span", { class: "miss-count" }, g.miss ? `ミス ${g.miss} 回` : "ミスなし")),
+      h("span", { class: "label" }, `ひとり ${g.level} 枚`),
+      h("span", { class: "miss-count" }, g.status === "play" ? "答え合わせは全員が出し切ってから" : g.miss ? "ゲームオーバー" : "成功！")),
     h("span", { class: "label" }, "お題"),
     h("h2", null, t.t || ""),
     h("div", { class: "scale" },
@@ -447,16 +451,13 @@ function room() {
     kids.push(topicPanel(g));
     const pile = arr(g.pile);
     kids.push(h("h3", { class: "section-title" }, "場に出たカード"),
-      h("div", { class: "table" }, pile.length ? pile.map(p => cardEl(p.n, p.name, p.hint, p.miss ? "miss" : "")) : h("span", { class: "empty" }, "まだ出ていません。いちばん小さいと思う人から出しましょう。")));
+      h("div", { class: "table" }, pile.length ? pile.map(p => g.status === "play" ? cardEl("?", p.name, p.hint, "back") : cardEl(p.n, p.name, p.hint, p.miss ? "miss" : "")) : h("span", { class: "empty" }, "まだ出ていません。いちばん小さいと思う人から出しましょう。")));
 
     if (g.status !== "play") {
-      const canNext = g.level + 1 <= maxLevel(members.length);
-      kids.push(h("section", { class: "result clear" },
-        h("h3", null, g.miss ? `レベル ${g.level} おしまい（ミス ${g.miss} 回）` : `レベル ${g.level} パーフェクト！`),
-        h("p", { style: "margin:0" }, canNext ? "次はひとり1枚ずつ増えます。" : "これ以上レベルを上げられません。完全制覇です！"),
-        host ? h("div", { class: "row" },
-          canNext ? h("button", { class: "btn primary", type: "button", onclick: nextLevel }, `レベル ${g.level + 1} へ`) : null,
-          h("button", { class: canNext ? "btn" : "btn primary", type: "button", onclick: startGame }, "レベル1からやり直す"))
+      kids.push(h("section", { class: "result " + (g.miss ? "over" : "clear") },
+        h("h3", null, g.miss ? "ゲームオーバー" : "成功！"),
+        h("p", { style: "margin:0" }, g.miss ? `順番が逆になったカードが ${g.miss} 枚ありました（赤いカード）。` : "全員のカードが小さい順に並びました。"),
+        host ? [countPicker(), h("div", { class: "row" }, h("button", { class: "btn primary", type: "button", onclick: startGame }, "もう一度遊ぶ"))]
           : h("p", { class: "note" }, `${r.hostName}さんが次を始めるのを待っています。`)));
     }
 
@@ -471,12 +472,12 @@ function room() {
       })));
 
     const mine = g.hands && g.hands[S.pid];
-    if (!mine) kids.push(h("p", { class: "banner" }, "このレベルの途中から参加しました。次に配られるときから参加できます。" + (host ? "すぐ入れたいときは下の「配り直す」を押してください。" : "")));
+    if (!mine) kids.push(h("p", { class: "banner" }, "このゲームの途中から参加しました。次に配られるときから参加できます。" + (host ? "すぐ入れたいときは下の「配り直す」を押してください。" : "")));
     else if (g.status === "play") {
       const cards = arr(mine.cards).map((c, i) => ({ ...c, i })).filter(c => c.state === "hand");
       kids.push(h("section", { class: "hand" },
         h("h3", { class: "section-title" }, "あなたのカード"),
-        h("p", { class: "note" }, "数字は自分にしか見えません。「ひとこと」にたとえを書くと、みんなの画面に表示されます。"),
+        h("p", { class: "note" }, "数字は自分にしか見えません。出したカードも、全員が出し切るまで伏せられます。「ひとこと」にたとえを書くと、みんなの画面に表示されます。"),
         cards.length ? cards.map(c => h("div", { class: "mycard" },
           cardEl(c.n),
           h("div", { class: "ctrl" },
@@ -488,7 +489,7 @@ function room() {
           : h("p", { class: "note" }, "あなたのカードは全部出しました。みんなを見守りましょう。")));
     }
     if (host) kids.push(h("div", { class: "row" },
-      g.status === "play" ? confirmBtn("このレベルを配り直す", "もう一度押すと配り直します", redeal) : null),
+      g.status === "play" ? confirmBtn("配り直す", "もう一度押すと配り直します", redeal) : null),
       settingsPanel(true));
   }
 
