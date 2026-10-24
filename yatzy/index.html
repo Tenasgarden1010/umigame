@@ -119,11 +119,10 @@ input.text { border: 1px solid var(--line); background: var(--bg); border-radius
 .result .newbest { color: var(--pot); font-weight: 700; }
 
 .dock { flex: none; padding-block: 8px calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 14px; }
-.tray { position: relative; background: radial-gradient(ellipse at 50% 30%, var(--felt), var(--felt-2)); border-radius: 16px; padding: 18px 10px 14px; display: flex; justify-content: center; gap: 10px; touch-action: none; user-select: none; -webkit-user-select: none; overflow: visible; }
-.tray.can { cursor: grab; }
-.tray .swipe { position: absolute; left: 0; right: 0; top: 2px; text-align: center; font-size: 11px; color: rgba(255,255,255,.7); letter-spacing: .1em; pointer-events: none; }
+.tray { position: relative; background: radial-gradient(ellipse at 50% 30%, var(--felt), var(--felt-2)); border-radius: 16px; padding: 18px 10px 14px; display: flex; justify-content: center; gap: 10px; user-select: none; -webkit-user-select: none; overflow: visible; }
 .slotd { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .keep { font-size: 11px; font-weight: 700; color: var(--hold); height: 14px; line-height: 14px; letter-spacing: .1em; }
+.die[role="button"] { cursor: pointer; }
 .die { width: clamp(46px, 14vw, 58px); aspect-ratio: 1; border-radius: 12px; background: var(--die); border: 1px solid var(--die-line); box-shadow: 0 3px 0 rgba(0,0,0,.25); display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 7px; gap: 1px; transition: transform .15s; }
 .die .p { border-radius: 50%; background: var(--pip); opacity: 0; width: 78%; height: 78%; place-self: center; }
 .die.blank { background: rgba(255,255,255,.12); border: 2px dashed rgba(255,255,255,.35); box-shadow: none; }
@@ -140,7 +139,18 @@ input.text { border: 1px solid var(--line); background: var(--bg); border-radius
   65% { transform: translate(calc(var(--dx) * -.06), calc(var(--dy) * -.06)) rotate(calc(var(--rot) * -.03)) scale(1.04); opacity: 1; }
   100% { transform: none; }
 }
-@media (prefers-reduced-motion: reduce) { .die.roll { animation-duration: 1ms; } }
+/* Celebration overlay (Yatzy / perfect game). It lives outside #app so re-renders don't cut it short. */
+.fx { position: fixed; inset: 0; pointer-events: none; display: grid; place-items: center; z-index: 50; overflow: hidden; }
+.fx.perfect { background: rgba(0, 0, 0, .45); animation: fade 3.2s ease both; }
+.fx .word { position: relative; z-index: 1; text-align: center; font-family: var(--font-display); font-size: clamp(40px, 13vw, 96px); line-height: 1.05; color: var(--hold);
+  text-shadow: 0 4px 0 #3a2400, 0 0 28px rgba(246, 170, 0, .7); letter-spacing: .04em; animation: pop 1.9s cubic-bezier(.2,.9,.3,1.2) both; }
+.fx .word small { display: block; font-family: var(--font-body); font-weight: 700; font-size: 18px; letter-spacing: .2em; color: #fff; text-shadow: 0 2px 6px #000; }
+.fx.perfect .word { font-size: clamp(36px, 11.5vw, 96px); color: #4dc4ff; text-shadow: 0 4px 0 #003a66, 0 0 32px rgba(77, 196, 255, .8); animation-duration: 3.2s; }
+.fx .c { position: absolute; left: 50%; top: 50%; width: 10px; height: 14px; border-radius: 2px; background: var(--k); animation: burst var(--t, 1.6s) cubic-bezier(.15,.7,.4,1) both; }
+@keyframes pop { 0% { transform: scale(.2) rotate(-14deg); opacity: 0; } 14% { transform: scale(1.18) rotate(3deg); opacity: 1; } 26% { transform: scale(1) rotate(0); } 82% { opacity: 1; } 100% { transform: scale(1.08); opacity: 0; } }
+@keyframes burst { 0% { transform: translate(-50%, -50%) rotate(0); opacity: 1; } 80% { opacity: 1; } 100% { transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) rotate(var(--r)); opacity: 0; } }
+@keyframes fade { 0%, 100% { opacity: 0; } 10%, 85% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .die.roll { animation-duration: 1ms; } .fx .c { display: none; } }
 .controls { display: flex; gap: 8px; align-items: center; }
 .controls .btn { height: 46px; }
 .controls .rollb { flex: none; min-width: 96px; padding-inline: 10px; }
@@ -428,7 +438,7 @@ function doCommit(g, pid, id) {
 function otherOf(pid) { const v = view(); return v.ids[0] === pid ? v.ids[1] : v.ids[0]; }
 
 // UI entry points: only on my turn.
-function roll(dir = -90) {
+function roll(dir = -90 + (Math.random() * 40 - 20)) {
   const v = view(); if (!v || !v.canRoll) return;
   S.sel = null;
   if (navigator.vibrate) try { navigator.vibrate(25); } catch {}
@@ -455,7 +465,7 @@ function startAnim(held, dir, seq) {
   const a = S.anim;
   const tick = () => {
     if (S.anim !== a) return;
-    if (performance.now() - a.start >= ROLL_MS) { S.anim = null; render(); return; }
+    if (performance.now() - a.start >= ROLL_MS) { S.anim = null; render(); const v = view(); if (v && a.held !== "11111" && isYatzy(v.dice)) celebrate("yatzy"); return; }
     document.querySelectorAll(".tray .die.roll").forEach(el => (el.dataset.face = 1 + Math.floor(Math.random() * 6)));
     setTimeout(tick, 70);
   };
@@ -472,6 +482,22 @@ function afterChange() {
   render();
   if (v.mode === "cpu" && v.phase === "play" && v.g.turn === "cpu") cpuTurn();
 }
+// CUD palette confetti.
+const CONFETTI = ["#f6aa00", "#4dc4ff", "#005aff", "#ff4b00", "#03af7a", "#fff100", "#990099"];
+function celebrate(kind) {
+  const perfect = kind === "perfect", ms = perfect ? 3200 : 1900;
+  const fx = h("div", { class: "fx" + (perfect ? " perfect" : ""), "aria-live": "assertive" },
+    h("div", { class: "word" }, perfect ? "PERFECT" : "YATZY!", h("small", null, perfect ? `パーフェクト！ 理論値${MAX_TOTAL}点` : "ヤッツィー！")),
+    Array.from({ length: perfect ? 90 : 46 }, () => {
+      const ang = Math.random() * Math.PI * 2, dist = 140 + Math.random() * (perfect ? 320 : 220);
+      const el = h("span", { class: "c" });
+      el.style.cssText = `--k:${CONFETTI[Math.floor(Math.random() * CONFETTI.length)]};--x:${Math.cos(ang) * dist}px;--y:${Math.sin(ang) * dist + 120}px;--r:${Math.random() * 900 - 450}deg;--t:${(perfect ? 2.2 : 1.3) + Math.random() * .8}s;animation-delay:${perfect ? Math.random() * 900 : 0}ms`;
+      return el;
+    }));
+  document.body.append(fx);
+  if (navigator.vibrate) try { navigator.vibrate(perfect ? [60, 60, 60, 60, 200] : [40, 40, 120]); } catch {}
+  setTimeout(() => fx.remove(), ms + 1000);
+}
 function record(v) {
   const rk = (v.mode === "cpu" ? "cpu" : S.key) + ":" + v.g.no + ":" + (v.g.first || "");
   if (S.recorded === rk || v.role === "watch") return;
@@ -480,6 +506,7 @@ function record(v) {
   const mine = v.T[v.me].total, theirs = v.T[v.opp].total;
   const best = local.get("best", 0);
   S.newBest = mine > best;
+  if (mine >= MAX_TOTAL) setTimeout(() => celebrate("perfect"), 400);
   if (S.newBest) local.set("best", mine);
   if (v.mode === "cpu") {
     const rec = local.get("record", { win: 0, lose: 0, draw: 0 });
@@ -601,26 +628,7 @@ function confirmBtn(label, armed, run, cls = "btn small ghost") {
   return b;
 }
 
-// ---------- swipe ----------
-// Only a quick, clearly upward flick rolls; a tap (even a slightly wobbly one) on a die keeps / releases it,
-// and anything in between does nothing, so aiming for a die never rolls by accident.
-const TAP_MOVE = 14, SWIPE_MIN = 70, SWIPE_MS = 700, AFTER_HOLD_MS = 500;
-let drag = null, lastHoldAt = 0;
-function trayDown(e) {
-  drag = { x: e.clientX, y: e.clientY, t: performance.now(), die: e.target.closest(".die") };
-  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-}
-function trayUp(e) {
-  if (!drag) return;
-  const dx = e.clientX - drag.x, dy = e.clientY - drag.y, dist = Math.hypot(dx, dy), d = drag; drag = null;
-  const now = performance.now();
-  if (dist < TAP_MOVE) {
-    if (d.die && d.die.dataset.i != null) { lastHoldAt = now; toggleHold(Number(d.die.dataset.i)); }
-    return;
-  }
-  const upward = dy <= -SWIPE_MIN && Math.abs(dx) < -dy * 1.2;
-  if (upward && now - d.t <= SWIPE_MS && now - lastHoldAt >= AFTER_HOLD_MS) roll(Math.atan2(dy, dx) * 180 / Math.PI);
-}
+// ---------- keyboard ----------
 addEventListener("keydown", e => {
   if (!(S.screen === "cpu" || S.screen === "room") || /^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === " " || e.key === "r") { roll(); e.preventDefault(); }
@@ -654,7 +662,7 @@ function home() {
     h("header", { class: "brand" },
       h("span", { class: "tag" }, "サイコロ5つの役づくり"),
       h("h1", null, "ヤッツィー"),
-      h("p", null, "サイコロ5つを1ターン3回まで振って、役を作ってスコア表を埋めていきます。13ターンで合計点の高いほうが勝ち。スマホならサイコロをスワイプして振れます。"),
+      h("p", null, "サイコロ5つを1ターン3回まで振って、役を作ってスコア表を埋めていきます。13ターンで合計点の高いほうが勝ち。"),
       h("div", { class: "mini", "aria-hidden": "true" }, [5, 5, 5, 5, 5].map(f => dieEl(f)))),
     S.err ? h("p", { class: "err", role: "alert" }, S.err) : null,
     h("section", { class: "panel" },
@@ -682,7 +690,7 @@ function home() {
     h("section", { class: "panel" },
       h("h2", null, "遊び方"),
       h("ol", { class: "rules" },
-        h("li", null, "自分の番になったら、サイコロ置き場を下から上へサッとスワイプ（または「振る」ボタン）で5つ全部を振ります。"),
+        h("li", null, "自分の番になったら「振る」ボタンで5つ全部を振ります。"),
         h("li", null, "残したいサイコロをタップすると「キープ」になり、次はそれ以外だけを振り直します。1ターンに振れるのは3回までです。"),
         h("li", null, "振ったらスコア表のどこか1つに記入します。入る点数が薄く表示されるので、選んでもう一度押すか「記入」ボタンで確定。役ができていない欄に入れると0点です。"),
         h("li", null, "13ターンで13欄が全部埋まったら終了。上の6欄の合計が63点以上ならボーナス35点。"),
@@ -699,7 +707,7 @@ function statusLine(v) {
   const turnNo = Math.min(13, (v.T[v.g.turn] || { filled: 0 }).filled + 1);
   const last = v.g.last && v.g.last.by !== v.me && v.g.rolls === 0 ? `${nm(v.g.last.by)}は「${CAT[v.g.last.cat].name}」に${v.g.last.val}点` : null;
   if (v.myTurn) {
-    if (v.g.rolls === 0) return h("div", { class: "status mine" }, `あなたの番です（${turnNo}/13）`, h("small", null, last ? last + "。" : "", "サイコロを上へスワイプして振りましょう"));
+    if (v.g.rolls === 0) return h("div", { class: "status mine" }, `あなたの番です（${turnNo}/13）`, h("small", null, last ? last + "。" : "", "「振る」を押してサイコロを振りましょう"));
     if (v.animating) return h("div", { class: "status mine" }, "コロコロ…", h("small", null, " "));
     if (v.g.rolls < 3) return h("div", { class: "status mine" }, `あと${3 - v.g.rolls}回振れます`, h("small", null, "残したいサイコロをタップ。スコア表の欄を選ぶと記入できます"));
     return h("div", { class: "status mine" }, "記入する欄を選んでください", h("small", null, "薄い数字が入る点数です"));
@@ -743,7 +751,8 @@ function sheet(v) {
 function resultCard(v) {
   const mine = v.T[v.ids[0]].total, theirs = v.T[v.ids[1]].total;
   let title, cls = "";
-  if (mine === theirs) title = "引き分け";
+  if (v.role === "player" && mine >= MAX_TOTAL) { title = "パーフェクト！"; cls = " won"; }
+  else if (mine === theirs) title = "引き分け";
   else if (v.role === "watch") title = `${v.names[mine > theirs ? v.ids[0] : v.ids[1]]}さんの勝ち`;
   else if (mine > theirs) { title = "あなたの勝ち！"; cls = " won"; }
   else { title = "負け…"; cls = " lost"; }
@@ -762,12 +771,12 @@ function dock(v) {
   if (v.phase !== "play") return null;
   const a = S.anim, now = performance.now();
   const showDice = v.g.rolls > 0 || a;
-  const tray = h("div", { class: "tray" + (v.canRoll ? " can" : ""), onpointerdown: trayDown, onpointerup: trayUp, onpointercancel: () => (drag = null) },
-    v.canRoll ? h("span", { class: "swipe" }, "↑ 上へスワイプして振る") : null,
+  const tray = h("div", { class: "tray" },
     v.dice.map((f, i) => {
       const held = v.g.rolls > 0 && v.held[i] === "1";
       const rolling = a && a.held[i] !== "1";
       const attrs = { "data-i": String(i), role: v.canScore && v.g.rolls < 3 ? "button" : null, "aria-pressed": v.canScore ? String(held) : null, "aria-label": showDice ? `${f}の目${held ? "（キープ中）" : ""}` : "まだ振っていません" };
+      if (attrs.role) attrs.onclick = () => toggleHold(i);
       const el = dieEl(showDice ? f : 0, attrs);
       if (held && !rolling) el.classList.add("held");
       if (rolling) {
