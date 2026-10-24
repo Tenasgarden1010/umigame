@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>いとおかし</title>
+<title>いとをかし</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <style>
@@ -396,7 +396,7 @@ function lobby() {
   return h("main", { class: "lobby" },
     h("header", { class: "brand" },
       h("span", { class: "sub" }, "ことばで並べる数字の糸"),
-      h("h1", null, "いとおかし"),
+      h("h1", null, "いとをかし"),
       h("p", null, "1〜100の数字カードが配られます。数字は言わずに、お題に沿った「たとえ」で大きさを伝え合い、みんなで小さい順にカードを出していく協力ゲームです。")),
     S.db && S.db.demo ? h("p", { class: "banner" }, "デモモードです。データベースの設定がまだなので、この端末の別タブ同士でだけ遊べます。") : null,
     h("section", { class: "panel" },
@@ -529,7 +529,7 @@ function room() {
   return h("div", { style: "display:contents" },
     h("header", { class: "top" },
       confirmBtn("leave", "← 退室", "もう一度押すと退室", () => leave("")),
-      h("span", { class: "name" }, "いとおかし"),
+      h("span", { class: "name" }, "いとをかし"),
       h("span", { class: "where" }, host ? "あなたが部屋主" : `部屋主：${r.hostName}`),
       h("span", { class: "spacer" }),
       host ? confirmBtn("close", "部屋を閉じる", "もう一度押すと部屋を削除", closeRoom) : null),
