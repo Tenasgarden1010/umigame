@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0b1020">
+<title>ロケット切り離し</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: full-screen canvas for the flight, DOM overlays for HUD, title and result. Single player, best record in localStorage only. */
+:root {
+  --ink: #eef2fb; --muted: #a9b4cc; --panel: rgba(12, 18, 36, .82); --line: rgba(255, 255, 255, .16);
+  --accent: #ff8a3d; --accent-ink: #1b0d02; --ok: #7fe0a0; --warn: #ffd166; --no: #ff6b5b;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: #0b1020; color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#sky { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#tap { position: fixed; inset: 0; touch-action: none; }
+
+.hud { position: fixed; inset: 0; pointer-events: none;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 16px) max(16px, env(safe-area-inset-left, 0px)); }
+.meter { display: flex; flex-direction: column; align-items: flex-start; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+.meter .lab { font-size: 11px; letter-spacing: .12em; color: var(--muted); font-weight: 700; }
+.meter .dist { font-family: var(--font-display); font-size: 34px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.meter .dist small { font-family: var(--font-body); font-size: 15px; margin-left: 4px; font-weight: 700; }
+.meter .spd { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.fuel { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(env(safe-area-inset-top, 0px) + 14px);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.fuel .lab { font-size: 11px; letter-spacing: .12em; color: var(--muted); font-weight: 700; }
+.tank { width: 30px; height: min(42vh, 260px); border: 2px solid rgba(255,255,255,.7); border-radius: 8px; position: relative; overflow: hidden; background: rgba(0,0,0,.35); }
+.tank i { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: var(--ok); }
+.tank.low i { background: var(--warn); }
+.tank.crit i { background: var(--no); }
+.tank.crit { animation: blink .18s steps(2) infinite; }
+@keyframes blink { 50% { border-color: var(--no); } }
+.pct { font-family: var(--font-display); font-size: 16px; font-variant-numeric: tabular-nums; }
+.stages { display: flex; flex-direction: column-reverse; gap: 4px; margin-top: 4px; }
+.stages b { width: 22px; height: 8px; border-radius: 3px; background: rgba(255,255,255,.18); }
+.stages b.on { background: var(--accent); }
+.stages b.done { background: rgba(255,255,255,.5); }
+.stagetxt { font-size: 13px; font-weight: 700; }
+
+.hint { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); text-align: center;
+  font-weight: 700; font-size: 15px; color: var(--ink); text-shadow: 0 1px 6px rgba(0,0,0,.7); opacity: .9; }
+.pop { position: absolute; left: 0; right: 0; top: 22%; text-align: center; font-family: var(--font-display);
+  font-size: 40px; letter-spacing: .04em; text-shadow: 0 2px 12px rgba(0,0,0,.6); opacity: 0; transform: scale(.8); }
+.pop.show { animation: pop .9s ease-out forwards; }
+.pop small { display: block; font-family: var(--font-body); font-weight: 700; font-size: 14px; letter-spacing: 0; }
+@keyframes pop { 0% { opacity: 0; transform: scale(.7); } 15% { opacity: 1; transform: scale(1.08); } 30% { transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-24px); } }
+
+.screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 16px) max(16px, env(safe-area-inset-left, 0px)); }
+.card { width: 100%; max-width: 380px; max-height: 100%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 24px 20px 18px; display: flex; flex-direction: column; gap: 16px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; line-height: 1.25; text-align: center; letter-spacing: .02em; }
+h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 26px; text-align: center; }
+.sub { margin: -8px 0 0; text-align: center; color: var(--muted); font-size: 13px; }
+.best { text-align: center; background: rgba(255,255,255,.06); border-radius: 12px; padding: 10px; }
+.best .lab { font-size: 11px; letter-spacing: .12em; color: var(--muted); font-weight: 700; }
+.best .num { font-family: var(--font-display); font-size: 26px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.best .num small { font-family: var(--font-body); font-size: 14px; font-weight: 700; margin-left: 3px; }
+.best .when { font-size: 12px; color: var(--muted); }
+.rules { margin: 0; padding-left: 1.3em; font-size: 14px; color: var(--ink); }
+.rules li + li { margin-top: 4px; }
+.btn { border: 1px solid var(--line); background: rgba(255,255,255,.08); border-radius: 12px; padding: 12px 16px; font-weight: 700; width: 100%; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-family: var(--font-display); font-weight: 400; font-size: 20px; letter-spacing: .08em; }
+.btn.small { padding: 6px 10px; font-size: 13px; width: auto; }
+.credit { margin: 0; font-size: 12px; color: var(--muted); text-align: center; letter-spacing: .05em; }
+.result-dist { text-align: center; }
+.result-dist .num { font-family: var(--font-display); font-size: 40px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.result-dist .num small { font-family: var(--font-body); font-size: 16px; font-weight: 700; margin-left: 4px; }
+.newrec { text-align: center; color: var(--warn); font-weight: 700; margin: -8px 0 0; animation: glow 1s ease-in-out infinite alternate; }
+@keyframes glow { to { opacity: .55; } }
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.log li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 10px; background: rgba(255,255,255,.05); border-radius: 8px; font-variant-numeric: tabular-nums; }
+.log .r-perfect { color: var(--warn); font-weight: 700; }
+.log .r-great { color: var(--ok); font-weight: 700; }
+.log .r-good { color: var(--ink); font-weight: 700; }
+.log .r-early { color: var(--muted); }
+.log .r-boom { color: var(--no); font-weight: 700; }
+.row { display: flex; gap: 8px; }
+.row .btn { flex: 1; }
+.reset { align-self: center; background: none; border: 0; color: var(--muted); font-size: 12px; text-decoration: underline; padding: 2px 6px; }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<div id="tap" hidden></div>
+
+<div class="hud" id="hud" hidden>
+  <div class="meter">
+    <span class="lab">距離</span>
+    <span class="dist"><span id="dist">0.0</span><small>km</small></span>
+    <span class="spd">速度 <span id="spd">0.00</span> km/s</span>
+  </div>
+  <div class="fuel">
+    <span class="stagetxt" id="stagetxt">1段目</span>
+    <span class="lab">燃料</span>
+    <div class="tank" id="tank"><i id="fuelbar"></i></div>
+    <span class="pct" id="pct">100</span>
+    <div class="stages" id="stages"><b></b><b></b><b></b><b></b><b></b></div>
+  </div>
+  <div class="pop" id="pop"></div>
+  <div class="hint" id="hint">燃料が0になる前にタップで切り離し！</div>
+</div>
+
+<div class="screen" id="title">
+  <div class="card">
+    <h1>ロケット<br>切り離し</h1>
+    <p class="sub">5段式ロケットでどこまで飛べるか</p>
+    <div class="best" id="titleBest"></div>
+    <ol class="rules">
+      <li>発射すると1段目の燃料が減っていきます。</li>
+      <li>画面をタップすると、今の段を切り離して次の段に点火します。</li>
+      <li>燃料が0になるまでにタップしないと爆発！</li>
+      <li>燃料を使い切る直前で切り離すほど加速が伸びます。5段目を切り離したら、あとは惰性で飛んだ距離が記録です。</li>
+    </ol>
+    <button class="btn primary" id="launch">発射</button>
+    <button class="reset" id="reset" hidden>記録をリセット</button>
+    <p class="credit">開発：tenwalker</p>
+  </div>
+</div>
+
+<div class="screen" id="result" hidden>
+  <div class="card">
+    <h2 id="resTitle">成功！</h2>
+    <div class="result-dist">
+      <div class="num"><span id="resDist">0</span><small>km</small></div>
+    </div>
+    <p class="newrec" id="newrec" hidden>自己ベスト更新！</p>
+    <div class="best" id="resBest"></div>
+    <ul class="log" id="log"></ul>
+    <div class="row">
+      <button class="btn primary" id="again">もう一度</button>
+    </div>
+    <button class="btn" id="toTitle">タイトルへ</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+// Tuning. Each stage drains faster than the last, with a per-flight random factor so the timing can't be memorized.
+const STAGES = 5;
+const BURN = [3.0, 2.7, 2.4, 2.1, 1.8];      // nominal seconds of fuel per stage, before randomness
+const ACCEL = [0.5, 0.7, 0.9, 1.1, 1.3];     // km/s^2 while a stage burns
+const GRAVITY = 0.008;                        // km/s^2 deceleration while coasting
+const LOCK_MS = 220;                          // ignore taps right after ignition so a double tap doesn't waste a stage
+const COAST_SECONDS = 3.5;                    // real time the coasting animation lasts
+const RATINGS = [                             // judged by fuel left (%) at separation
+  { max: 5,   key: "perfect", label: "PERFECT!", bonus: 0.06, color: "#ffd166" },
+  { max: 15,  key: "great",   label: "GREAT!",   bonus: 0.03, color: "#7fe0a0" },
+  { max: 30,  key: "good",    label: "GOOD",     bonus: 0.01, color: "#eef2fb" },
+  { max: 101, key: "early",   label: "早すぎ…",  bonus: 0,    color: "#a9b4cc" },
+];
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("rocket:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("rocket:" + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("rocket:" + k); } catch {} },
+};
+
+const fmtKm = d => d < 100 ? d.toFixed(1) : Math.round(d).toLocaleString("ja-JP");
+const fmtDate = t => { const d = new Date(t); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; };
+const vibrate = p => { try { navigator.vibrate && navigator.vibrate(p); } catch {} };
+
+// ---------- game state ----------
+let g = null;          // current flight
+let mode = "title";    // title | burn | coast | boom | result
+
+function newFlight() {
+  return {
+    stage: 0, fuel: 100, rate: 0, v: 0, alt: 0, t: 0,
+    lockUntil: 0, log: [], debris: [], particles: [], coastScale: 1, boomAt: 0,
+    shake: 0,
+  };
+}
+
+function ignite() {
+  const jitter = 0.8 + Math.random() * 0.4;
+  g.fuel = 100;
+  g.rate = 100 / (BURN[g.stage] * jitter);
+  g.lockUntil = performance.now() + LOCK_MS;
+}
+
+function startFlight() {
+  g = newFlight();
+  ignite();
+  mode = "burn";
+  $("title").hidden = true; $("result").hidden = true;
+  $("hud").hidden = false; $("tap").hidden = false; $("hint").hidden = false;
+  updateHud();
+  vibrate(30);
+}
+
+function separate() {
+  if (mode !== "burn" || performance.now() < g.lockUntil) return;
+  const left = g.fuel;
+  const r = RATINGS.find(r => left <= r.max);
+  g.v *= 1 + r.bonus;
+  g.log.push({ stage: g.stage, left, rating: r });
+  g.debris.push({ stage: g.stage, y: 0, vy: 0, rot: 0, vr: (Math.random() - .5) * 2, x: (Math.random() - .5) * 0.6, life: 1 });
+  showPop(r.label, r.color, `残り燃料 ${Math.ceil(left)}%`);
+  $("hint").hidden = true;
+  vibrate(r.key === "perfect" ? [20, 30, 20] : 15);
+  if (g.stage === STAGES - 1) {
+    g.stage = STAGES;
+    mode = "coast";
+    // Speed up time so the long ballistic arc plays out in a few seconds.
+    g.coastScale = Math.max(1, (g.v / GRAVITY) / COAST_SECONDS);
+  } else {
+    g.stage++;
+    ignite();
+  }
+  updateHud();
+}
+
+function explode() {
+  mode = "boom";
+  g.fuel = 0;
+  g.boomAt = performance.now();
+  g.log.push({ stage: g.stage, left: 0, rating: null });
+  g.shake = 1;
+  for (let i = 0; i < 90; i++) {
+    const a = Math.random() * Math.PI * 2, s = 40 + Math.random() * 260;
+    g.particles.push({ x: 0, y: 0, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, size: 2 + Math.random() * 5,
+      hue: 15 + Math.random() * 35 });
+  }
+  showPop("爆発！", "#ff6b5b", "");
+  $("hint").hidden = true;
+  vibrate([80, 40, 120]);
+  updateHud();
+}
+
+function finish() {
+  mode = "result";
+  $("tap").hidden = true;
+  const dist = g.alt;
+  const success = g.stage >= STAGES;
+  const best = store.get("best", null);
+  const isNew = dist > 0 && (!best || dist > best.d);
+  if (isNew) store.set("best", { d: dist, at: Date.now() });
+  store.set("plays", store.get("plays", 0) + 1);
+
+  $("resTitle").textContent = success ? "成功！" : "爆発…";
+  $("resDist").textContent = fmtKm(dist);
+  $("newrec").hidden = !isNew;
+  renderBest($("resBest"), isNew ? null : store.get("best", null), "自己ベスト");
+  $("resBest").hidden = isNew;
+
+  const log = $("log");
+  log.replaceChildren();
+  for (const e of g.log) {
+    const li = document.createElement("li");
+    const a = document.createElement("span"); a.textContent = `${e.stage + 1}段目`;
+    const b = document.createElement("span");
+    if (e.rating) { b.textContent = `${e.rating.label}（残り${Math.ceil(e.left)}%）`; b.className = "r-" + e.rating.key; }
+    else { b.textContent = "燃料切れで爆発"; b.className = "r-boom"; }
+    li.append(a, b); log.append(li);
+  }
+  setTimeout(() => { $("hud").hidden = true; $("result").hidden = false; $("again").focus({ preventScroll: true }); }, success ? 500 : 1100);
+}
+
+function renderBest(el, best, label) {
+  el.replaceChildren();
+  const lab = document.createElement("div"); lab.className = "lab"; lab.textContent = label;
+  const num = document.createElement("div"); num.className = "num";
+  if (best) {
+    num.textContent = fmtKm(best.d);
+    const s = document.createElement("small"); s.textContent = "km"; num.append(s);
+  } else {
+    num.textContent = "まだ記録なし";
+    num.style.fontSize = "18px";
+  }
+  el.append(lab, num);
+  if (best) { const w = document.createElement("div"); w.className = "when"; w.textContent = fmtDate(best.at) + " 達成"; el.append(w); }
+}
+
+function showTitle() {
+  mode = "title";
+  g = null;
+  $("result").hidden = true; $("hud").hidden = true; $("tap").hidden = true;
+  $("title").hidden = false;
+  const best = store.get("best", null);
+  renderBest($("titleBest"), best, "自己ベスト");
+  $("reset").hidden = !best;
+  resetBtnArmed = false; $("reset").textContent = "記録をリセット";
+}
+
+let popTimer = 0;
+function showPop(text, color, sub) {
+  const p = $("pop");
+  p.replaceChildren(document.createTextNode(text));
+  if (sub) { const s = document.createElement("small"); s.textContent = sub; p.append(s); }
+  p.style.color = color;
+  p.classList.remove("show"); void p.offsetWidth; p.classList.add("show");
+  clearTimeout(popTimer); popTimer = setTimeout(() => p.classList.remove("show"), 950);
+}
+
+function updateHud() {
+  if (!g) return;
+  $("dist").textContent = fmtKm(g.alt);
+  $("spd").textContent = g.v.toFixed(2);
+  const f = mode === "burn" ? g.fuel : 0;
+  $("fuelbar").style.height = f + "%";
+  $("pct").textContent = Math.ceil(f);
+  const tank = $("tank");
+  tank.classList.toggle("low", mode === "burn" && f <= 40 && f > 15);
+  tank.classList.toggle("crit", mode === "burn" && f <= 15);
+  $("stagetxt").textContent = g.stage < STAGES ? `${g.stage + 1}段目` : "惰性飛行";
+  [...$("stages").children].forEach((b, i) => {
+    b.className = i < g.stage ? "done" : i === g.stage && mode !== "boom" ? "on" : "";
+  });
+}
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (g) step(dt, now);
+  draw(now);
+  requestAnimationFrame(frame);
+}
+
+function step(dt, now) {
+  g.t += dt;
+  if (mode === "burn") {
+    // Drain speeds up as the tank empties, so the last few percent go fast.
+    const empty = 1 - g.fuel / 100;
+    g.fuel -= g.rate * (0.75 + 0.9 * empty * empty) * dt;
+    g.v += ACCEL[g.stage] * dt;
+    g.alt += g.v * dt;
+    if (g.fuel <= 0) explode();
+    updateHud();
+  } else if (mode === "coast") {
+    const dts = dt * g.coastScale;
+    const nv = Math.max(0, g.v - GRAVITY * dts);
+    g.alt += (g.v + nv) / 2 * dts;
+    g.v = nv;
+    updateHud();
+    if (g.v <= 0) finish();
+  } else if (mode === "boom") {
+    if (now - g.boomAt > 900) finish();
+  }
+  for (const d of g.debris) { d.vy += 260 * dt; d.y += d.vy * dt; d.rot += d.vr * dt; d.life -= dt * 0.6; }
+  g.debris = g.debris.filter(d => d.life > 0);
+  for (const p of g.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy = p.vy * 0.96 + 30 * dt; p.life -= dt * 0.9; }
+  g.particles = g.particles.filter(p => p.life > 0);
+  g.shake = Math.max(0, g.shake - dt * 2);
+}
+
+// ---------- drawing ----------
+const cv = $("sky"), cx = cv.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener("resize", resize);
+resize();
+
+const stars = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + 0.3, z: Math.random() * 0.8 + 0.2 }));
+const clouds = Array.from({ length: 9 }, (_, i) => ({ x: Math.random(), alt: 1.2 + i * 1.3 + Math.random(), w: 60 + Math.random() * 90 }));
+let scroll = 0; // background scroll in px, driven by speed
+
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+
+function draw(now) {
+  const alt = g ? g.alt : 0;
+  const v = g ? g.v : 0;
+  // Altitude 0 → blue sky, ~100 km and above → space.
+  const space = Math.min(1, Math.log10(1 + alt) / 2);
+  const top = mix([92, 160, 230], [3, 6, 18], Math.min(1, space * 1.3));
+  const bot = mix([190, 222, 248], [12, 18, 40], space);
+  const grad = cx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, rgb(top)); grad.addColorStop(1, rgb(bot));
+  cx.fillStyle = grad; cx.fillRect(0, 0, W, H);
+
+  const sh = g ? g.shake * 10 : 0;
+  cx.save();
+  if (sh) cx.translate((Math.random() - .5) * sh, (Math.random() - .5) * sh);
+
+  // Speed drives the scroll; capped so coasting at high time-scale still reads as motion, not noise.
+  scroll += Math.min(900, v * 260) * (1 / 60);
+  const starAlpha = Math.max(0, (space - 0.25) / 0.75);
+  if (starAlpha > 0) {
+    cx.fillStyle = `rgba(255,255,255,${starAlpha})`;
+    for (const s of stars) {
+      const y = ((s.y * H + scroll * s.z * 0.4) % H + H) % H;
+      cx.beginPath(); cx.arc(s.x * W, y, s.r, 0, Math.PI * 2); cx.fill();
+    }
+  }
+  // Speed streaks once moving.
+  if (mode === "burn" || mode === "coast") {
+    const n = Math.min(14, Math.floor(v * 2));
+    cx.strokeStyle = space > .5 ? "rgba(255,255,255,.25)" : "rgba(255,255,255,.5)";
+    cx.lineWidth = 1.5;
+    for (let i = 0; i < n; i++) {
+      const x = ((i * 97.3) % 1) * W + ((i * 53) % W);
+      const y = ((i * 131 + scroll * 1.6) % (H + 80)) - 40;
+      cx.beginPath(); cx.moveTo(x % W, y); cx.lineTo(x % W, y + 18 + v * 3); cx.stroke();
+    }
+  }
+
+  const rx = W / 2;
+  const ry = H * (g ? 0.58 : 0.66);   // rocket nozzle line on screen
+  const pxPerKm = 120;
+
+  // Clouds in the lower atmosphere.
+  for (const c of clouds) {
+    const y = ry - (c.alt - alt) * pxPerKm;
+    if (y < -60 || y > H + 60) continue;
+    cx.fillStyle = `rgba(255,255,255,${0.75 * (1 - space)})`;
+    const x = c.x * W;
+    cx.beginPath();
+    cx.ellipse(x, y, c.w / 2, 14, 0, 0, Math.PI * 2);
+    cx.ellipse(x - c.w * .2, y - 8, c.w / 4, 12, 0, 0, Math.PI * 2);
+    cx.ellipse(x + c.w * .15, y - 10, c.w / 3.5, 13, 0, 0, Math.PI * 2);
+    cx.fill();
+  }
+
+  // Ground and launch pad, visible near the start.
+  const groundY = ry + 34 + alt * pxPerKm;
+  if (groundY < H + 10) {
+    cx.fillStyle = "#3c6b45"; cx.fillRect(0, groundY, W, H - groundY + 10);
+    cx.fillStyle = "#56885c"; cx.fillRect(0, groundY, W, 6);
+    cx.fillStyle = "#59606e"; cx.fillRect(rx - 46, groundY - 34, 10, 34); cx.fillRect(rx - 60, groundY - 4, 120, 6);
+  }
+
+  const S = Math.max(0.8, Math.min(1.2, H / 760));
+  const segH = 34 * S, bodyW = 30 * S;
+
+  // Falling spent stages.
+  if (g) for (const d of g.debris) {
+    cx.save();
+    cx.globalAlpha = Math.max(0, d.life);
+    cx.translate(rx + d.x * 80 * (1 - d.life), ry + d.y);
+    cx.rotate(d.rot);
+    drawSegment(-bodyW / 2, -segH, bodyW, segH, d.stage, S);
+    cx.restore();
+  }
+
+  if (mode !== "boom" && !(mode === "result" && g && g.stage < STAGES)) {
+    const first = g ? g.stage : 0;
+    // Flame under the active stage.
+    if (mode === "burn") {
+      const f = g.fuel / 100;
+      const flick = 0.85 + Math.random() * 0.3;
+      const len = (26 + 34 * Math.min(1, v / 4)) * S * flick * (0.6 + 0.4 * f);
+      flame(rx, ry, bodyW * 0.8, len);
+    }
+    let y = ry;
+    for (let i = first; i < STAGES; i++) {
+      drawSegment(rx - bodyW / 2, y - segH, bodyW, segH, i, S);
+      y -= segH;
+    }
+    drawCapsule(rx, y, bodyW, S);
+  }
+
+  // Explosion.
+  if (g) for (const p of g.particles) {
+    cx.fillStyle = `hsla(${p.hue},100%,${45 + p.life * 30}%,${p.life})`;
+    cx.beginPath(); cx.arc(rx + p.x, ry - 60 * S + p.y, p.size * (0.5 + p.life), 0, Math.PI * 2); cx.fill();
+  }
+  if (mode === "boom" && g) {
+    const k = Math.max(0, 1 - (now - g.boomAt) / 350);
+    if (k > 0) { cx.fillStyle = `rgba(255,240,200,${k * 0.7})`; cx.fillRect(-20, -20, W + 40, H + 40); }
+  }
+  cx.restore();
+}
+
+const STAGE_COLORS = ["#e9edf5", "#dfe5f0", "#e9edf5", "#dfe5f0", "#e9edf5"];
+const BAND_COLORS = ["#d94b3d", "#2f6fd6", "#f2a33a", "#3aa76d", "#8a5ad6"];
+function drawSegment(x, y, w, h, i, S) {
+  cx.fillStyle = STAGE_COLORS[i];
+  cx.fillRect(x, y, w, h);
+  cx.fillStyle = BAND_COLORS[i];
+  cx.fillRect(x, y + h - 7 * S, w, 5 * S);
+  cx.strokeStyle = "rgba(0,0,0,.35)"; cx.lineWidth = 1;
+  cx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+  if (i === 0) { // fins on the first stage
+    cx.fillStyle = BAND_COLORS[0];
+    cx.beginPath(); cx.moveTo(x, y + h * .35); cx.lineTo(x - 10 * S, y + h); cx.lineTo(x, y + h); cx.fill();
+    cx.beginPath(); cx.moveTo(x + w, y + h * .35); cx.lineTo(x + w + 10 * S, y + h); cx.lineTo(x + w, y + h); cx.fill();
+  }
+  cx.fillStyle = "#444b59"; // nozzle
+  cx.fillRect(x + w * .3, y + h, w * .4, 4 * S);
+  cx.fillStyle = "rgba(0,0,0,.6)"; cx.font = `700 ${11 * S}px ${getComputedStyle(document.body).fontFamily}`;
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.fillText(String(i + 1), x + w / 2, y + h * .42);
+}
+function drawCapsule(cxm, y, w, S) {
+  cx.fillStyle = "#f4f6fb";
+  cx.beginPath(); cx.moveTo(cxm - w / 2, y); cx.quadraticCurveTo(cxm - w / 2, y - 26 * S, cxm, y - 40 * S);
+  cx.quadraticCurveTo(cxm + w / 2, y - 26 * S, cxm + w / 2, y); cx.closePath(); cx.fill();
+  cx.strokeStyle = "rgba(0,0,0,.35)"; cx.stroke();
+  cx.fillStyle = "#4aa3e8"; cx.beginPath(); cx.arc(cxm, y - 16 * S, 5 * S, 0, Math.PI * 2); cx.fill();
+}
+function flame(x, y, w, len) {
+  const gr = cx.createLinearGradient(0, y, 0, y + len);
+  gr.addColorStop(0, "rgba(255,255,230,1)"); gr.addColorStop(.35, "rgba(255,190,60,.95)"); gr.addColorStop(1, "rgba(255,80,20,0)");
+  cx.fillStyle = gr;
+  cx.beginPath(); cx.moveTo(x - w / 2, y + 2); cx.quadraticCurveTo(x - w / 3, y + len * .6, x, y + len);
+  cx.quadraticCurveTo(x + w / 3, y + len * .6, x + w / 2, y + 2); cx.closePath(); cx.fill();
+}
+
+// ---------- input ----------
+$("tap").addEventListener("pointerdown", e => { e.preventDefault(); separate(); });
+document.addEventListener("keydown", e => {
+  if (e.code !== "Space" && e.code !== "Enter") return;
+  if (mode === "burn") { e.preventDefault(); separate(); }
+});
+$("launch").addEventListener("click", startFlight);
+$("again").addEventListener("click", startFlight);
+$("toTitle").addEventListener("click", showTitle);
+let resetBtnArmed = false;
+$("reset").addEventListener("click", () => {
+  if (!resetBtnArmed) { resetBtnArmed = true; $("reset").textContent = "もう一度押すと記録を消します"; return; }
+  store.del("best"); store.del("plays"); showTitle();
+});
+document.addEventListener("gesturestart", e => e.preventDefault());
+
+showTitle();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
