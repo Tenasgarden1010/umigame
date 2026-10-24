@@ -7,13 +7,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <style>
+/* Colors follow the CUD (color universal design) palette: blue / orange / brown roles, and every state also has a shape or label. */
 /* Layout: one-screen app. Home = CPU game / online room / rules; game = score sheet (scrolls) with the dice tray pinned at the bottom. */
 :root {
   --bg: #e9ede8; --surface: #f8faf7; --sunk: #dce3db; --ink: #18221c; --muted: #56645b; --line: #c4cfc6;
-  --accent: #1d6e4c; --accent-ink: #ffffff; --accent-soft: #d5e8dd;
-  --felt: #1f5d43; --felt-2: #18503a; --die: #fbfaf5; --die-line: #d9d4c4; --pip: #1b1d22; --pip-one: #c0392b;
-  --hold: #d39a1c; --hold-bg: #f6e8c6; --pot: #8a6a12;
-  --win: #2f7d4b; --win-bg: #dcefe2; --no: #b24a3a; --no-bg: #f6e0db; --wait-bg: #f1ead2;
+  --accent: #0047c2; --accent-ink: #ffffff; --accent-soft: #dbe6fb;
+  --felt: #1f5d43; --felt-2: #18503a; --die: #fbfaf5; --die-line: #d9d4c4; --pip: #1b1d22; --pip-one: #e03c00;
+  --hold: #f6aa00; --hold-bg: #fff0c7; --pot: #804000;
+  --win: #0047c2; --win-bg: #dbe6fb; --no: #c43800; --no-bg: #fbe3d6; --wait-bg: #f1ead2;
   --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
   --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
   color-scheme: light;
@@ -21,10 +22,10 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f1512; --surface: #17201b; --sunk: #0b100d; --ink: #e1e8e3; --muted: #97a69c; --line: #2a3830;
-    --accent: #6cc79a; --accent-ink: #0a2016; --accent-soft: #1b3428;
-    --felt: #163f2e; --felt-2: #113324; --die: #ece9df; --die-line: #bdb7a6; --pip: #1b1d22; --pip-one: #c0392b;
-    --hold: #e8b54a; --hold-bg: #3a2f14; --pot: #e8c46a;
-    --win: #7fd49b; --win-bg: #183526; --no: #f0927f; --no-bg: #3a201b; --wait-bg: #33301a; color-scheme: dark;
+    --accent: #4dc4ff; --accent-ink: #04202e; --accent-soft: #14303f;
+    --felt: #163f2e; --felt-2: #113324; --die: #ece9df; --die-line: #bdb7a6; --pip: #1b1d22; --pip-one: #e03c00;
+    --hold: #f6aa00; --hold-bg: #3a2f14; --pot: #f6c46a;
+    --win: #4dc4ff; --win-bg: #14303f; --no: #ff8a5c; --no-bg: #3a2016; --wait-bg: #33301a; color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
@@ -91,18 +92,18 @@ input.text { border: 1px solid var(--line); background: var(--bg); border-radius
 .sheet tr:last-child > * { border-bottom: 0; }
 .sheet thead th { font-size: 13px; font-weight: 700; color: var(--muted); height: 34px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet thead th.turn { color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
-.sheet thead .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--win); margin-right: 4px; vertical-align: middle; }
-.sheet thead .dot.off { background: var(--line); }
+.sheet thead .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 2px solid var(--accent); margin-right: 4px; vertical-align: middle; }
+.sheet thead .dot.off { background: transparent; border-color: var(--muted); }
 .sheet col.c-name { width: auto; }
 .sheet col.c-p { width: 26%; }
 .sheet .cat { padding: 0 8px; text-align: left; font-weight: 700; font-size: 14px; line-height: 1.2; }
 .sheet .cat small { display: block; font-weight: 500; font-size: 11px; color: var(--muted); }
 .sheet td.v { text-align: center; font-family: var(--font-display); font-size: 17px; border-left: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .sheet td.v.zero { color: var(--muted); }
-.sheet td.v.last { background: var(--hold-bg); }
+.sheet td.v.last { background: var(--hold-bg); box-shadow: inset 0 -3px 0 var(--hold); }
 .sheet td.v button { width: 100%; height: 100%; border: 0; background: transparent; font-family: var(--font-display); font-size: 17px; color: var(--pot); opacity: .75; padding: 0; }
 .sheet td.v button.z { color: var(--muted); opacity: .5; }
-.sheet td.v button.sel { opacity: 1; background: var(--hold-bg); box-shadow: inset 0 0 0 2px var(--hold); color: var(--ink); }
+.sheet td.v button.sel { opacity: 1; background: var(--hold-bg); box-shadow: inset 0 0 0 3px var(--hold); color: var(--ink); text-decoration: underline; }
 .sheet tr.sum th, .sheet tr.sum td { background: var(--sunk); height: 30px; font-size: 13px; }
 .sheet tr.sum td.v { font-size: 15px; }
 .sheet tr.sum .cat { font-size: 13px; }
@@ -115,9 +116,9 @@ input.text { border: 1px solid var(--line); background: var(--bg); border-radius
 .result.won h2 { color: var(--win); }
 .result.lost h2 { color: var(--no); }
 .result p { margin: 0; color: var(--muted); }
-.result .newbest { color: var(--hold); font-weight: 700; }
+.result .newbest { color: var(--pot); font-weight: 700; }
 
-.dock { flex: none; padding-block: 8px calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; }
+.dock { flex: none; padding-block: 8px calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 14px; }
 .tray { position: relative; background: radial-gradient(ellipse at 50% 30%, var(--felt), var(--felt-2)); border-radius: 16px; padding: 18px 10px 14px; display: flex; justify-content: center; gap: 10px; touch-action: none; user-select: none; -webkit-user-select: none; overflow: visible; }
 .tray.can { cursor: grab; }
 .tray .swipe { position: absolute; left: 0; right: 0; top: 2px; text-align: center; font-size: 11px; color: rgba(255,255,255,.7); letter-spacing: .1em; pointer-events: none; }
@@ -145,8 +146,8 @@ input.text { border: 1px solid var(--line); background: var(--bg); border-radius
 .controls .rollb { flex: none; min-width: 96px; padding-inline: 10px; }
 .controls .commit { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pips3 { display: flex; gap: 4px; flex: none; }
-.pips3 span { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
-.pips3 span.used { background: var(--line); }
+.pips3 span { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--accent); }
+.pips3 span.used { background: transparent; border-color: var(--muted); }
 .hint { font-size: 12px; color: var(--muted); text-align: center; margin: 0; }
 .center { margin: auto; text-align: center; padding: 24px; color: var(--muted); }
 </style>
@@ -205,7 +206,7 @@ const CATS = [
   { id: "sixes", name: "6の目", hint: "6の目の合計", face: 6 },
   { id: "three", name: "スリーカード", hint: "同じ目3つ以上・全部の合計" },
   { id: "four", name: "フォーカード", hint: "同じ目4つ以上・全部の合計" },
-  { id: "full", name: "フルハウス", hint: "3つ＋2つ・25点" },
+  { id: "full", name: "フルハウス", hint: "3つ＋2つ・全部の合計" },
   { id: "sst", name: "S・ストレート", hint: "4つ続き・30点" },
   { id: "lst", name: "L・ストレート", hint: "5つ続き・40点" },
   { id: "yatzy", name: "ヤッツィー", hint: "5つ全部同じ・50点" },
@@ -215,52 +216,47 @@ const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
 const UPPER = CATS.slice(0, 6), LOWER = CATS.slice(6);
 const counts = d => { const c = [0, 0, 0, 0, 0, 0, 0]; for (const x of d) c[x]++; return c; };
 const isYatzy = d => d.length === 5 && d.every(x => x === d[0]);
-// joker: a second Yatzy may fill full house / straights at full value.
-function scoreOf(id, d, joker) {
+function scoreOf(id, d) {
   const c = counts(d), sum = d.reduce((a, b) => a + b, 0), mx = Math.max(...c);
   const run = n => { for (let s = 1; s + n - 1 <= 6; s++) { let ok = true; for (let k = s; k < s + n; k++) if (!c[k]) ok = false; if (ok) return true; } return false; };
   if (CAT[id].face) return c[CAT[id].face] * CAT[id].face;
   switch (id) {
     case "three": return mx >= 3 ? sum : 0;
     case "four": return mx >= 4 ? sum : 0;
-    case "full": return joker || (c.includes(3) && c.includes(2)) ? 25 : 0;
-    case "sst": return joker || run(4) ? 30 : 0;
-    case "lst": return joker || run(5) ? 40 : 0;
+    case "full": return c.includes(3) && c.includes(2) ? sum : 0;
+    case "sst": return run(4) ? 30 : 0;
+    case "lst": return run(5) ? 40 : 0;
     case "yatzy": return mx === 5 ? 50 : 0;
     case "chance": return sum;
   }
   return 0;
 }
-function totals(sc, yb) {
+function totals(sc) {
   sc = sc || {};
   const upper = UPPER.reduce((a, c) => a + (sc[c.id] || 0), 0);
   const bonus = upper >= 63 ? 35 : 0;
   const lower = LOWER.reduce((a, c) => a + (sc[c.id] || 0), 0);
-  const ybonus = (yb || 0) * 100;
-  return { upper, bonus, lower, ybonus, total: upper + bonus + lower + ybonus, filled: Object.keys(sc).length };
+  return { upper, bonus, lower, total: upper + bonus + lower, filled: Object.keys(sc).length };
 }
 const diceOf = g => String(g.dice || "00000").split("").map(Number);
-const jokerFor = (sc, d) => isYatzy(d) && sc && sc.yatzy != null;
 
 // ---------- CPU ----------
 // Expected-value player over the 252 possible dice sets. V0 = how good a final hand is
 // (best box minus that box's typical score; the weaker CPU just chases raw points), E_k(kept dice) = expected value after rerolling the rest.
-const PAR = { three: 17, four: 10, full: 14, sst: 18, lst: 17, yatzy: 12, chance: 21 };
+const PAR = { three: 17, four: 10, full: 16, sst: 18, lst: 17, yatzy: 12, chance: 21 };
 const skey = arr => arr.slice().sort().join("");
 function subKeys(key) {
   const out = new Set();
   for (let m = 0; m < 32; m++) { let s = ""; for (let i = 0; i < 5; i++) if (m >> i & 1) s += key[i]; out.add(s); }
   return [...out];
 }
-function makeAI(sc, yb, strong = true) {
+function makeAI(sc, strong = true) {
   const open = CATS.filter(c => sc[c.id] == null).map(c => c.id);
-  const upper = totals(sc, yb).upper, needBonus = upper < 63;
+  const upper = totals(sc).upper, needBonus = upper < 63;
   const utility = (id, d) => {
-    const joker = jokerFor(sc, d);
-    const s = scoreOf(id, d, joker), face = CAT[id].face;
-    if (!strong) return s + (isYatzy(d) && sc.yatzy === 50 ? 100 : 0);
+    const s = scoreOf(id, d), face = CAT[id].face;
+    if (!strong) return s;
     let u = face ? s - face * 2.6 + (needBonus && counts(d)[face] >= 3 ? 6 : 0) : s - PAR[id];
-    if (isYatzy(d) && sc.yatzy === 50) u += 100;
     return u;
   };
   const v0memo = new Map();
@@ -342,7 +338,7 @@ function demoBackend() {
 }
 
 // ---------- state ----------
-// Both modes share one game shape: { no, first, turn, dice:"35126", held:"01001", rolls, seq, dir, scores:{pid:{box:pts}}, yb:{pid:n}, last }.
+// Both modes share one game shape: { no, first, turn, dice:"35126", held:"01001", rolls, seq, dir, scores:{pid:{box:pts}}, last }.
 // In a CPU game it lives in memory (and localStorage); online it lives at rooms/<key>/game and only the player whose turn it is writes it.
 const S = {
   db: null, screen: "home", err: "", busy: false,
@@ -354,7 +350,7 @@ const S = {
 let unsubRoom = null;
 const roomPath = p => `rooms/${S.key}` + (p ? "/" + p : "");
 const touch = () => ({ updatedAt: Date.now() });
-const newGame = (no, first, seq) => ({ no, first, turn: first, dice: "00000", held: "00000", rolls: 0, seq: seq || 0, dir: -90, scores: {}, yb: {} });
+const newGame = (no, first, seq) => ({ no, first, turn: first, dice: "00000", held: "00000", rolls: 0, seq: seq || 0, dir: -90, scores: {} });
 
 function view() {
   let g, ids, names, me, role = "player", online = () => true, mode = S.screen;
@@ -370,8 +366,8 @@ function view() {
     names = { [host]: r.hostName || "部屋を作った人" }; if (guest) names[guest] = r.guestName || "相手";
     online = id => !!(r.members && r.members[id]);
   }
-  const scores = g.scores || {}, yb = g.yb || {};
-  const T = Object.fromEntries(ids.filter(Boolean).map(id => [id, totals(scores[id], yb[id])]));
+  const scores = g.scores || {};
+  const T = Object.fromEntries(ids.filter(Boolean).map(id => [id, totals(scores[id])]));
   const opp = ids[1];
   const phase = !opp ? "wait" : T[ids[0]].filled >= 13 && T[opp].filled >= 13 ? "over" : "play";
   const dice = diceOf(g), held = String(g.held || "00000");
@@ -379,7 +375,7 @@ function view() {
   const myTurn = phase === "play" && role === "player" && g.turn === me;
   const canRoll = myTurn && g.rolls < 3 && !animating;
   const canScore = myTurn && g.rolls > 0 && !animating;
-  return { g, ids, names, me, opp, role, online, scores, yb, T, phase, dice, held, animating, myTurn, canRoll, canScore, mode };
+  return { g, ids, names, me, opp, role, online, scores, T, phase, dice, held, animating, myTurn, canRoll, canScore, mode };
 }
 
 // ---------- game actions (shared) ----------
@@ -395,16 +391,37 @@ async function patchGame(p) {
 }
 function doRoll(g, dir) {
   const held = g.rolls ? String(g.held) : "00000";
-  const dice = diceOf(g).map((x, i) => (held[i] === "1" ? x : d6())).join("");
-  const seq = (g.seq || 0) + 1;
-  startAnim(held, dir, seq);
-  return patchGame({ dice, held, rolls: g.rolls + 1, seq, dir: Math.round(dir) });
+  const p = { held, rolls: g.rolls + 1, seq: (g.seq || 0) + 1, dir: Math.round(dir) };
+  if (S.screen === "cpu" && g.lucky && g.turn === "me") Object.assign(p, luckyRoll(g, held));
+  else p.dice = diceOf(g).map((x, i) => (held[i] === "1" ? x : d6())).join("");
+  startAnim(held, dir, p.seq);
+  return patchGame(p);
+}
+
+// Lucky game (2% of CPU games): each turn the player's dice are dealt toward the best hand for one open box,
+// arriving over the three rolls (2 → 4 → 5 matching dice). Keeping the right dice, rolling all three times and
+// filling the right box every turn reaches the theoretical maximum of 378.
+const BEST = { ones: "11111", twos: "22222", threes: "33333", fours: "44444", fives: "55555", sixes: "66666",
+  three: "66666", four: "66666", full: "66655", sst: "34566", lst: "23456", yatzy: "66666", chance: "66666" };
+const MAX_TOTAL = 378;
+function luckyRoll(g, held) {
+  let target = g.target;
+  if (!g.rolls || !target) {
+    const open = CATS.filter(c => ((g.scores || {}).me || {})[c.id] == null).map(c => c.id);
+    target = open[Math.floor(Math.random() * open.length)];
+  }
+  const dice = diceOf(g), need = BEST[target].split("").map(Number);
+  let matched = 0;
+  for (let i = 0; i < 5; i++) if (held[i] === "1") { const j = need.indexOf(dice[i]); if (j >= 0) { need.splice(j, 1); matched++; } }
+  const free = [0, 1, 2, 3, 4].filter(i => held[i] !== "1").sort(() => Math.random() - .5);
+  let give = Math.max(0, Math.min(free.length, need.length, [2, 4, 5][g.rolls] - matched));
+  need.sort(() => Math.random() - .5);
+  for (const i of free) dice[i] = give-- > 0 ? need.pop() : d6();
+  return { dice: dice.join(""), target };
 }
 function doCommit(g, pid, id) {
-  const d = diceOf(g), sc = (g.scores || {})[pid] || {};
-  const val = scoreOf(id, d, jokerFor(sc, d));
+  const val = scoreOf(id, diceOf(g));
   const p = { [`scores/${pid}/${id}`]: val, turn: otherOf(pid), rolls: 0, held: "00000", last: { by: pid, cat: id, val } };
-  if (isYatzy(d) && sc.yatzy === 50) p[`yb/${pid}`] = ((g.yb || {})[pid] || 0) + 1;
   S.sel = null;
   return patchGame(p);
 }
@@ -486,14 +503,14 @@ async function cpuTurn() {
     }
     const d = diceOf(S.cg), left = 3 - S.cg.rolls;
     if (left <= 0) break;
-    const ai = makeAI(sc(), (S.cg.yb || {}).cpu || 0, S.strong);
+    const ai = makeAI(sc(), S.strong);
     const keep = ai.keep(d, left);
     if (keep.length === 5) break;
     const held = [0, 1, 2, 3, 4].map(i => (keep.includes(i) ? "1" : "0")).join("");
     if (held !== S.cg.held) { patchGame({ held }); await sleep(900); if (!alive()) return; }
   }
   if (!alive()) return;
-  const ai = makeAI(sc(), (S.cg.yb || {}).cpu || 0, S.strong);
+  const ai = makeAI(sc(), S.strong);
   const id = ai.pick(diceOf(S.cg));
   S.cpuPick = id; render();
   await sleep(900);
@@ -507,8 +524,8 @@ function startCpu(resume) {
   S.cpuTok++;
   const saved = local.get("cpu", null);
   if (resume && saved && saved.scores) S.cg = saved;
-  else { const prev = saved && saved.first; S.cg = newGame(((saved && saved.no) || 0) + 1, prev === "me" ? "cpu" : "me"); }
-  S.cg.scores = S.cg.scores || {}; S.cg.yb = S.cg.yb || {};
+  else S.cg = { ...newGame(((saved && saved.no) || 0) + 1, "me"), lucky: Math.random() < .02 || /[?&]lucky\b/.test(location.search) };
+  S.cg.scores = S.cg.scores || {};
   local.set("cpu", S.cg);
   Object.assign(S, { screen: "cpu", sel: null, anim: null, seenSeq: S.cg.seq || 0, newBest: false, recorded: "" });
   afterChange();
@@ -585,8 +602,10 @@ function confirmBtn(label, armed, run, cls = "btn small ghost") {
 }
 
 // ---------- swipe ----------
-// A drag across the tray rolls in the drag's direction; a short tap on a die keeps / releases it.
-let drag = null;
+// Only a quick, clearly upward flick rolls; a tap (even a slightly wobbly one) on a die keeps / releases it,
+// and anything in between does nothing, so aiming for a die never rolls by accident.
+const TAP_MOVE = 14, SWIPE_MIN = 70, SWIPE_MS = 700, AFTER_HOLD_MS = 500;
+let drag = null, lastHoldAt = 0;
 function trayDown(e) {
   drag = { x: e.clientX, y: e.clientY, t: performance.now(), die: e.target.closest(".die") };
   try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
@@ -594,8 +613,13 @@ function trayDown(e) {
 function trayUp(e) {
   if (!drag) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y, dist = Math.hypot(dx, dy), d = drag; drag = null;
-  if (dist >= 30) { roll(Math.atan2(dy, dx) * 180 / Math.PI); return; }
-  if (d.die && d.die.dataset.i != null) toggleHold(Number(d.die.dataset.i));
+  const now = performance.now();
+  if (dist < TAP_MOVE) {
+    if (d.die && d.die.dataset.i != null) { lastHoldAt = now; toggleHold(Number(d.die.dataset.i)); }
+    return;
+  }
+  const upward = dy <= -SWIPE_MIN && Math.abs(dx) < -dy * 1.2;
+  if (upward && now - d.t <= SWIPE_MS && now - lastHoldAt >= AFTER_HOLD_MS) roll(Math.atan2(dy, dx) * 180 / Math.PI);
 }
 addEventListener("keydown", e => {
   if (!(S.screen === "cpu" || S.screen === "room") || /^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -606,13 +630,14 @@ addEventListener("keydown", e => {
 
 // ---------- render ----------
 function render() {
-  const main = document.querySelector(".main"), top = main ? main.scrollTop : 0;
+  const main = document.querySelector(".main"), top = main ? main.scrollTop : 0, hadResult = !!document.querySelector(".result");
   const keep = {};
   document.querySelectorAll("input[id]").forEach(el => (keep[el.id] = el.value));
   const act = document.activeElement, focusId = act && act.id;
   $app.replaceChildren(S.screen === "home" ? home() : game());
   for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (el && v != null) el.value = v; }
-  const nm = document.querySelector(".main"); if (nm) nm.scrollTop = top;
+  // Keep the sheet where it was, except jump up to the result when a game has just ended.
+  const nm = document.querySelector(".main"); if (nm) nm.scrollTop = !hadResult && document.querySelector(".result") ? 0 : top;
   const back = focusId && document.getElementById(focusId);
   if (back) back.focus({ preventScroll: true });
 }
@@ -657,11 +682,11 @@ function home() {
     h("section", { class: "panel" },
       h("h2", null, "遊び方"),
       h("ol", { class: "rules" },
-        h("li", null, "自分の番になったら、サイコロの上をスワイプ（または「振る」ボタン）で5つ全部を振ります。"),
+        h("li", null, "自分の番になったら、サイコロ置き場を下から上へサッとスワイプ（または「振る」ボタン）で5つ全部を振ります。"),
         h("li", null, "残したいサイコロをタップすると「キープ」になり、次はそれ以外だけを振り直します。1ターンに振れるのは3回までです。"),
         h("li", null, "振ったらスコア表のどこか1つに記入します。入る点数が薄く表示されるので、選んでもう一度押すか「記入」ボタンで確定。役ができていない欄に入れると0点です。"),
         h("li", null, "13ターンで13欄が全部埋まったら終了。上の6欄の合計が63点以上ならボーナス35点。"),
-        h("li", null, "ヤッツィー欄が50点のあとにもう一度ヤッツィーを出すと+100点。そのときはフルハウス・ストレートの欄にも満点で記入できます。")),
+        h("li", null, "CPU戦はいつもあなたが先攻です。オンライン対戦は1回ごとに先攻・後攻が交代します。")),
       h("table", { class: "ptable" }, h("tbody", null, CATS.map(c => h("tr", null, h("td", null, c.name), h("td", null, c.hint)))))),
     h("p", { class: "credit" }, "開発：tenwalker"));
 }
@@ -674,7 +699,7 @@ function statusLine(v) {
   const turnNo = Math.min(13, (v.T[v.g.turn] || { filled: 0 }).filled + 1);
   const last = v.g.last && v.g.last.by !== v.me && v.g.rolls === 0 ? `${nm(v.g.last.by)}は「${CAT[v.g.last.cat].name}」に${v.g.last.val}点` : null;
   if (v.myTurn) {
-    if (v.g.rolls === 0) return h("div", { class: "status mine" }, `あなたの番です（${turnNo}/13）`, h("small", null, last ? last + "。" : "", "サイコロをスワイプして振りましょう"));
+    if (v.g.rolls === 0) return h("div", { class: "status mine" }, `あなたの番です（${turnNo}/13）`, h("small", null, last ? last + "。" : "", "サイコロを上へスワイプして振りましょう"));
     if (v.animating) return h("div", { class: "status mine" }, "コロコロ…", h("small", null, " "));
     if (v.g.rolls < 3) return h("div", { class: "status mine" }, `あと${3 - v.g.rolls}回振れます`, h("small", null, "残したいサイコロをタップ。スコア表の欄を選ぶと記入できます"));
     return h("div", { class: "status mine" }, "記入する欄を選んでください", h("small", null, "薄い数字が入る点数です"));
@@ -688,8 +713,6 @@ function statusLine(v) {
 function sheet(v) {
   const [a, b] = v.ids;
   const potential = v.canScore ? diceOf(v.g) : null;
-  const mySc = v.scores[v.me] || {};
-  const joker = potential && jokerFor(mySc, potential);
   const head = id => h("th", { class: v.phase === "play" && v.g.turn === id && id ? "turn" : "" },
     v.mode === "room" && id ? h("span", { class: "dot" + (v.online(id) ? "" : " off") }) : null,
     id ? (id === v.me && v.role === "player" ? "あなた" : v.names[id]) : "相手");
@@ -699,10 +722,10 @@ function sheet(v) {
     const isLast = v.g.last && v.g.last.by === id && v.g.last.cat === c.id;
     if (val != null) return h("td", { class: "v" + (val === 0 ? " zero" : "") + (isLast ? " last" : "") }, val);
     if (id === v.me && potential) {
-      const s = scoreOf(c.id, potential, joker);
+      const s = scoreOf(c.id, potential);
       return h("td", { class: "v" }, h("button", { type: "button", class: (s ? "" : "z") + (S.sel === c.id ? " sel" : ""), "aria-label": `${c.name}に${s}点`, onclick: () => pickCell(c.id) }, s));
     }
-    if (S.cpuPick === c.id && id === "cpu") return h("td", { class: "v last" }, scoreOf(c.id, diceOf(v.g), jokerFor(v.scores.cpu, diceOf(v.g))));
+    if (S.cpuPick === c.id && id === "cpu") return h("td", { class: "v last" }, scoreOf(c.id, diceOf(v.g)));
     return h("td", { class: "v" });
   };
   const sumRow = (label, fn, cls = "sum") => h("tr", { class: cls }, h("th", { class: "cat" }, label), [a, b].map(id => h("td", { class: "v" }, id ? fn(v.T[id], id) : "")));
@@ -714,7 +737,6 @@ function sheet(v) {
       sumRow("上段 小計", t => [String(t.upper), h("span", { class: "prog" }, t.upper >= 63 ? "達成" : `あと${63 - t.upper}`)]),
       sumRow(["ボーナス", h("small", null, "上段63点以上で35")], t => (t.bonus ? "35" : "0")),
       LOWER.map(c => h("tr", null, h("th", { class: "cat", title: c.hint }, c.name, h("small", null, c.hint)), cell(a, c), cell(b, c))),
-      sumRow("ヤッツィーボーナス", t => String(t.ybonus)),
       sumRow("合計", t => String(t.total), "total")));
 }
 
@@ -729,8 +751,10 @@ function resultCard(v) {
     h("h2", null, title),
     h("p", null, `${v.names[v.ids[0]]} ${mine}点 ／ ${v.names[v.ids[1]]} ${theirs}点`),
     S.newBest && v.role === "player" ? h("p", { class: "newbest" }, "自己ベスト更新！") : null,
+    v.mode === "cpu" && v.g.lucky ? h("p", { class: "newbest" }, mine >= MAX_TOTAL ? `理論値${MAX_TOTAL}点 達成！`
+      : `じつはこの回は、うまく選べば理論値${MAX_TOTAL}点が出せるラッキーゲーム（2%）でした`) : null,
     v.role === "player" ? h("div", { class: "row", style: "justify-content:center" },
-      h("button", { class: "btn primary", type: "button", onclick: nextGame }, "もう一度（先攻・後攻を交代）"),
+      h("button", { class: "btn primary", type: "button", onclick: nextGame }, v.mode === "cpu" ? "もう一度" : "もう一度（先攻・後攻を交代）"),
       v.mode === "cpu" ? h("button", { class: "btn", type: "button", onclick: goHome }, "メニューへ") : null) : null);
 }
 
@@ -739,7 +763,7 @@ function dock(v) {
   const a = S.anim, now = performance.now();
   const showDice = v.g.rolls > 0 || a;
   const tray = h("div", { class: "tray" + (v.canRoll ? " can" : ""), onpointerdown: trayDown, onpointerup: trayUp, onpointercancel: () => (drag = null) },
-    v.canRoll ? h("span", { class: "swipe" }, "↑ スワイプして振る") : null,
+    v.canRoll ? h("span", { class: "swipe" }, "↑ 上へスワイプして振る") : null,
     v.dice.map((f, i) => {
       const held = v.g.rolls > 0 && v.held[i] === "1";
       const rolling = a && a.held[i] !== "1";
@@ -754,7 +778,7 @@ function dock(v) {
     }));
   const parts = [tray];
   if (v.myTurn) {
-    const sc = S.sel && scoreOf(S.sel, v.dice, jokerFor(v.scores[v.me], v.dice));
+    const sc = S.sel && scoreOf(S.sel, v.dice);
     parts.push(h("div", { class: "controls" },
       h("div", { class: "pips3", "aria-label": `${v.g.rolls}回振りました` }, [0, 1, 2].map(i => h("span", { class: i < v.g.rolls ? "used" : "" }))),
       h("button", { class: "btn rollb" + (v.g.rolls === 0 ? " primary" : ""), type: "button", disabled: !v.canRoll, onclick: () => roll() }, v.g.rolls === 0 ? "振る" : v.g.rolls < 3 ? `振る（あと${3 - v.g.rolls}）` : "振れません"),
