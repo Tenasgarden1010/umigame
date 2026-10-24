@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ヤッツィー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-screen app. Home = CPU game / online room / rules; game = score sheet (scrolls) with the dice tray pinned at the bottom. */
+:root {
+  --bg: #e9ede8; --surface: #f8faf7; --sunk: #dce3db; --ink: #18221c; --muted: #56645b; --line: #c4cfc6;
+  --accent: #1d6e4c; --accent-ink: #ffffff; --accent-soft: #d5e8dd;
+  --felt: #1f5d43; --felt-2: #18503a; --die: #fbfaf5; --die-line: #d9d4c4; --pip: #1b1d22; --pip-one: #c0392b;
+  --hold: #d39a1c; --hold-bg: #f6e8c6; --pot: #8a6a12;
+  --win: #2f7d4b; --win-bg: #dcefe2; --no: #b24a3a; --no-bg: #f6e0db; --wait-bg: #f1ead2;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1512; --surface: #17201b; --sunk: #0b100d; --ink: #e1e8e3; --muted: #97a69c; --line: #2a3830;
+    --accent: #6cc79a; --accent-ink: #0a2016; --accent-soft: #1b3428;
+    --felt: #163f2e; --felt-2: #113324; --die: #ece9df; --die-line: #bdb7a6; --pip: #1b1d22; --pip-one: #c0392b;
+    --hold: #e8b54a; --hold-bg: #3a2f14; --pot: #e8c46a;
+    --win: #7fd49b; --win-bg: #183526; --no: #f0927f; --no-bg: #3a201b; --wait-bg: #33301a; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+[hidden] { display: none !important; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app { height: 100%; display: flex; flex-direction: column; max-width: 640px; margin: 0 auto;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 14px; font-weight: 500; }
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.btn.ghost { background: transparent; }
+.btn.small { padding: 3px 10px; font-size: 13px; }
+.btn.armed { background: var(--no-bg); color: var(--no); border-color: var(--no); }
+.label { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.err { color: var(--no); font-size: 13px; margin: 0; }
+.muted { color: var(--muted); }
+input.text { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.banner { background: var(--wait-bg); color: var(--ink); border-radius: 10px; padding: 8px 12px; font-size: 13px; margin: 0; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 14px; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.seg button + button { border-left: 1px solid var(--line); }
+
+.home { flex: 1; min-height: 0; overflow-y: auto; padding-block: 28px 40px; display: flex; flex-direction: column; gap: 22px; }
+.credit { margin: 0; font-size: 12px; color: var(--muted); text-align: center; letter-spacing: .05em; }
+.brand { display: flex; flex-direction: column; gap: 6px; }
+.brand h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(36px, 9vw, 52px); line-height: 1.15; margin: 0; letter-spacing: .04em; }
+.brand .tag { color: var(--accent); font-size: 13px; letter-spacing: .25em; font-weight: 700; }
+.brand p { margin: 4px 0 0; max-width: 34em; color: var(--muted); }
+.brand .mini { display: flex; gap: 6px; margin-top: 6px; }
+.brand .mini .die { width: 34px; height: 34px; border-radius: 8px; padding: 4px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel h2 { font-size: 18px; margin: 0; }
+.panel p { margin: 0; }
+.stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.stats b { color: var(--ink); font-size: 15px; }
+.rules { margin: 0; padding-left: 1.3em; color: var(--muted); font-size: 14px; }
+.ptable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ptable td { padding: 3px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ptable td:first-child { font-weight: 700; white-space: nowrap; }
+.ptable td:last-child { color: var(--muted); }
+
+.top { flex: none; display: flex; align-items: center; gap: 8px; padding-block: 12px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.top .name { font-family: var(--font-display); font-size: 17px; }
+.top .where { color: var(--muted); font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.top .spacer { flex: 1; }
+.main { flex: 1; min-height: 0; overflow-y: auto; padding-block: 10px; display: flex; flex-direction: column; gap: 10px; }
+.status { border-radius: 12px; padding: 8px 14px; background: var(--accent-soft); font-weight: 700; text-align: center; }
+.status.wait { background: var(--wait-bg); }
+.status.mine { background: var(--accent); color: var(--accent-ink); }
+.status small { display: block; font-weight: 500; font-size: 13px; }
+.status .pass { font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .05em; }
+
+.sheet { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; table-layout: fixed; }
+.sheet th, .sheet td { border-bottom: 1px solid var(--line); padding: 0; height: 36px; }
+.sheet tr:last-child > * { border-bottom: 0; }
+.sheet thead th { font-size: 13px; font-weight: 700; color: var(--muted); height: 34px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet thead th.turn { color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+.sheet thead .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--win); margin-right: 4px; vertical-align: middle; }
+.sheet thead .dot.off { background: var(--line); }
+.sheet col.c-name { width: auto; }
+.sheet col.c-p { width: 26%; }
+.sheet .cat { padding: 0 8px; text-align: left; font-weight: 700; font-size: 14px; line-height: 1.2; }
+.sheet .cat small { display: block; font-weight: 500; font-size: 11px; color: var(--muted); }
+.sheet td.v { text-align: center; font-family: var(--font-display); font-size: 17px; border-left: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.sheet td.v.zero { color: var(--muted); }
+.sheet td.v.last { background: var(--hold-bg); }
+.sheet td.v button { width: 100%; height: 100%; border: 0; background: transparent; font-family: var(--font-display); font-size: 17px; color: var(--pot); opacity: .75; padding: 0; }
+.sheet td.v button.z { color: var(--muted); opacity: .5; }
+.sheet td.v button.sel { opacity: 1; background: var(--hold-bg); box-shadow: inset 0 0 0 2px var(--hold); color: var(--ink); }
+.sheet tr.sum th, .sheet tr.sum td { background: var(--sunk); height: 30px; font-size: 13px; }
+.sheet tr.sum td.v { font-size: 15px; }
+.sheet tr.sum .cat { font-size: 13px; }
+.sheet tr.total th, .sheet tr.total td { background: var(--accent-soft); height: 40px; }
+.sheet tr.total td.v { font-size: 20px; }
+.sheet .prog { display: block; font-family: var(--font-body); font-size: 10px; color: var(--muted); line-height: 1; }
+
+.result { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; }
+.result h2 { font-family: var(--font-display); font-weight: 400; font-size: 28px; margin: 0; }
+.result.won h2 { color: var(--win); }
+.result.lost h2 { color: var(--no); }
+.result p { margin: 0; color: var(--muted); }
+.result .newbest { color: var(--hold); font-weight: 700; }
+
+.dock { flex: none; padding-block: 8px calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; }
+.tray { position: relative; background: radial-gradient(ellipse at 50% 30%, var(--felt), var(--felt-2)); border-radius: 16px; padding: 18px 10px 14px; display: flex; justify-content: center; gap: 10px; touch-action: none; user-select: none; -webkit-user-select: none; overflow: visible; }
+.tray.can { cursor: grab; }
+.tray .swipe { position: absolute; left: 0; right: 0; top: 2px; text-align: center; font-size: 11px; color: rgba(255,255,255,.7); letter-spacing: .1em; pointer-events: none; }
+.slotd { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.keep { font-size: 11px; font-weight: 700; color: var(--hold); height: 14px; line-height: 14px; letter-spacing: .1em; }
+.die { width: clamp(46px, 14vw, 58px); aspect-ratio: 1; border-radius: 12px; background: var(--die); border: 1px solid var(--die-line); box-shadow: 0 3px 0 rgba(0,0,0,.25); display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 7px; gap: 1px; transition: transform .15s; }
+.die .p { border-radius: 50%; background: var(--pip); opacity: 0; width: 78%; height: 78%; place-self: center; }
+.die.blank { background: rgba(255,255,255,.12); border: 2px dashed rgba(255,255,255,.35); box-shadow: none; }
+.die.held { box-shadow: 0 0 0 3px var(--hold), 0 3px 0 rgba(0,0,0,.25); transform: translateY(-4px); }
+.die[data-face="1"] .p:nth-child(5) { opacity: 1; background: var(--pip-one); width: 92%; height: 92%; }
+.die[data-face="2"] .p:is(:nth-child(3), :nth-child(7)),
+.die[data-face="3"] .p:is(:nth-child(3), :nth-child(5), :nth-child(7)),
+.die[data-face="4"] .p:is(:nth-child(1), :nth-child(3), :nth-child(7), :nth-child(9)),
+.die[data-face="5"] .p:is(:nth-child(1), :nth-child(3), :nth-child(5), :nth-child(7), :nth-child(9)),
+.die[data-face="6"] .p:is(:nth-child(1), :nth-child(3), :nth-child(4), :nth-child(6), :nth-child(7), :nth-child(9)) { opacity: 1; }
+.die.roll { animation: tumble var(--dur, 800ms) cubic-bezier(.15,.75,.3,1) both; }
+@keyframes tumble {
+  0% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(.75); opacity: .3; }
+  65% { transform: translate(calc(var(--dx) * -.06), calc(var(--dy) * -.06)) rotate(calc(var(--rot) * -.03)) scale(1.04); opacity: 1; }
+  100% { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .die.roll { animation-duration: 1ms; } }
+.controls { display: flex; gap: 8px; align-items: center; }
+.controls .btn { height: 46px; }
+.controls .rollb { flex: none; min-width: 96px; padding-inline: 10px; }
+.controls .commit { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pips3 { display: flex; gap: 4px; flex: none; }
+.pips3 span { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.pips3 span.used { background: var(--line); }
+.hint { font-size: 12px; color: var(--muted); text-align: center; margin: 0; }
+.center { margin: auto; text-align: center; padding: 24px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app" id="app"><p class="center">読み込み中…</p></div>
+<script src="../firebase-config.js"></script>
+<script type="module">
+const $app = document.getElementById("app");
+const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
+const ROOM_TTL = 12 * 60 * 60 * 1000;
+const ROLL_MS = 800;
+
+// ---------- helpers ----------
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat(Infinity)) if (k != null && k !== false) el.append(k instanceof Node ? k : String(k));
+  return el;
+}
+const local = {
+  get(k, d) { try { const v = localStorage.getItem("yatzy:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("yatzy:" + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("yatzy:" + k); } catch {} },
+};
+const rid = () => Array.from(crypto.getRandomValues(new Uint8Array(10)), b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+const clip = (s, n) => String(s ?? "").slice(0, n);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Unbiased 1..6 from the crypto RNG.
+function d6() { const b = new Uint8Array(1); do crypto.getRandomValues(b); while (b[0] >= 252); return 1 + (b[0] % 6); }
+// The passphrase itself is never stored; rooms are keyed by a hash of it ("yz" keeps them apart from the other games' rooms).
+function roomKey(pass) {
+  const s = pass.normalize("NFKC").trim().toLowerCase().replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60)).replace(/\s+/g, "");
+  let a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+  for (const ch of s) { const c = ch.codePointAt(0); a = Math.imul(a ^ c, 0x01000193) >>> 0; b = Math.imul(b ^ c, 0x5bd1e995) >>> 0; b ^= b >>> 13; }
+  return "yz" + a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0");
+}
+function setPath(obj, path, val) {
+  const ks = path.split("/"); let o = obj;
+  for (const k of ks.slice(0, -1)) { if (typeof o[k] !== "object" || o[k] === null) o[k] = {}; o = o[k]; }
+  if (val == null) delete o[ks[ks.length - 1]]; else o[ks[ks.length - 1]] = val;
+}
+
+// ---------- rules ----------
+const CATS = [
+  { id: "ones", name: "1の目", hint: "1の目の合計", face: 1 },
+  { id: "twos", name: "2の目", hint: "2の目の合計", face: 2 },
+  { id: "threes", name: "3の目", hint: "3の目の合計", face: 3 },
+  { id: "fours", name: "4の目", hint: "4の目の合計", face: 4 },
+  { id: "fives", name: "5の目", hint: "5の目の合計", face: 5 },
+  { id: "sixes", name: "6の目", hint: "6の目の合計", face: 6 },
+  { id: "three", name: "スリーカード", hint: "同じ目3つ以上・全部の合計" },
+  { id: "four", name: "フォーカード", hint: "同じ目4つ以上・全部の合計" },
+  { id: "full", name: "フルハウス", hint: "3つ＋2つ・25点" },
+  { id: "sst", name: "S・ストレート", hint: "4つ続き・30点" },
+  { id: "lst", name: "L・ストレート", hint: "5つ続き・40点" },
+  { id: "yatzy", name: "ヤッツィー", hint: "5つ全部同じ・50点" },
+  { id: "chance", name: "チャンス", hint: "何でも・全部の合計" },
+];
+const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
+const UPPER = CATS.slice(0, 6), LOWER = CATS.slice(6);
+const counts = d => { const c = [0, 0, 0, 0, 0, 0, 0]; for (const x of d) c[x]++; return c; };
+const isYatzy = d => d.length === 5 && d.every(x => x === d[0]);
+// joker: a second Yatzy may fill full house / straights at full value.
+function scoreOf(id, d, joker) {
+  const c = counts(d), sum = d.reduce((a, b) => a + b, 0), mx = Math.max(...c);
+  const run = n => { for (let s = 1; s + n - 1 <= 6; s++) { let ok = true; for (let k = s; k < s + n; k++) if (!c[k]) ok = false; if (ok) return true; } return false; };
+  if (CAT[id].face) return c[CAT[id].face] * CAT[id].face;
+  switch (id) {
+    case "three": return mx >= 3 ? sum : 0;
+    case "four": return mx >= 4 ? sum : 0;
+    case "full": return joker || (c.includes(3) && c.includes(2)) ? 25 : 0;
+    case "sst": return joker || run(4) ? 30 : 0;
+    case "lst": return joker || run(5) ? 40 : 0;
+    case "yatzy": return mx === 5 ? 50 : 0;
+    case "chance": return sum;
+  }
+  return 0;
+}
+function totals(sc, yb) {
+  sc = sc || {};
+  const upper = UPPER.reduce((a, c) => a + (sc[c.id] || 0), 0);
+  const bonus = upper >= 63 ? 35 : 0;
+  const lower = LOWER.reduce((a, c) => a + (sc[c.id] || 0), 0);
+  const ybonus = (yb || 0) * 100;
+  return { upper, bonus, lower, ybonus, total: upper + bonus + lower + ybonus, filled: Object.keys(sc).length };
+}
+const diceOf = g => String(g.dice || "00000").split("").map(Number);
+const jokerFor = (sc, d) => isYatzy(d) && sc && sc.yatzy != null;
+
+// ---------- CPU ----------
+// Expected-value player over the 252 possible dice sets. V0 = how good a final hand is
+// (best box minus that box's typical score; the weaker CPU just chases raw points), E_k(kept dice) = expected value after rerolling the rest.
+const PAR = { three: 17, four: 10, full: 14, sst: 18, lst: 17, yatzy: 12, chance: 21 };
+const skey = arr => arr.slice().sort().join("");
+function subKeys(key) {
+  const out = new Set();
+  for (let m = 0; m < 32; m++) { let s = ""; for (let i = 0; i < 5; i++) if (m >> i & 1) s += key[i]; out.add(s); }
+  return [...out];
+}
+function makeAI(sc, yb, strong = true) {
+  const open = CATS.filter(c => sc[c.id] == null).map(c => c.id);
+  const upper = totals(sc, yb).upper, needBonus = upper < 63;
+  const utility = (id, d) => {
+    const joker = jokerFor(sc, d);
+    const s = scoreOf(id, d, joker), face = CAT[id].face;
+    if (!strong) return s + (isYatzy(d) && sc.yatzy === 50 ? 100 : 0);
+    let u = face ? s - face * 2.6 + (needBonus && counts(d)[face] >= 3 ? 6 : 0) : s - PAR[id];
+    if (isYatzy(d) && sc.yatzy === 50) u += 100;
+    return u;
+  };
+  const v0memo = new Map();
+  const V0 = key => {
+    if (v0memo.has(key)) return v0memo.get(key);
+    const d = key.split("").map(Number);
+    let best = -Infinity; for (const id of open) best = Math.max(best, utility(id, d));
+    v0memo.set(key, best); return best;
+  };
+  const expect = V => { const memo = new Map(); const E = key => {
+    if (memo.has(key)) return memo.get(key);
+    let v;
+    if (key.length === 5) v = V(key);
+    else { v = 0; for (let f = 1; f <= 6; f++) v += E(skey((key + f).split(""))); v /= 6; }
+    memo.set(key, v); return v;
+  }; return E; };
+  const E0 = expect(V0);
+  const v1memo = new Map();
+  const V1 = key => {
+    if (v1memo.has(key)) return v1memo.get(key);
+    let best = -Infinity; for (const s of subKeys(key)) best = Math.max(best, E0(s));
+    v1memo.set(key, best); return best;
+  };
+  const E1 = expect(V1);
+  return {
+    // Which dice to keep with `left` rolls remaining; keeping all five means stop rolling.
+    keep(d, left) {
+      const E = strong && left >= 2 ? E1 : E0;
+      const ranked = subKeys(skey(d)).map(s => [s, E(s)]).sort((x, y) => y[1] - x[1]);
+      // The weaker CPU sometimes settles for its second idea.
+      const best = ranked[!strong && ranked.length > 1 && Math.random() < .3 ? 1 : 0][0];
+      const used = new Set(), idx = [];
+      for (const ch of best) { const i = d.findIndex((x, j) => !used.has(j) && String(x) === ch); used.add(i); idx.push(i); }
+      return idx;
+    },
+    pick(d) {
+      let best = open[0], bv = -Infinity;
+      for (const id of open) { const u = utility(id, d); if (u > bv) { bv = u; best = id; } }
+      return best;
+    },
+  };
+}
+
+// ---------- backends ----------
+async function firebaseBackend(cfg) {
+  const app = await import(FB + "firebase-app.js");
+  const d = await import(FB + "firebase-database.js");
+  const db = d.getDatabase(app.initializeApp(cfg));
+  const r = p => d.ref(db, p);
+  return {
+    demo: false,
+    listen: (p, cb, onErr) => d.onValue(r(p), s => cb(s.val()), e => onErr && onErr(e)),
+    get: async p => (await d.get(r(p))).val(),
+    set: (p, v) => d.set(r(p), v),
+    update: (p, v) => d.update(r(p), v),
+    remove: p => d.remove(r(p)),
+    onDisconnectRemove: p => d.onDisconnect(r(p)).remove(),
+  };
+}
+// Demo mode: the "database" is localStorage, shared only between tabs of this browser.
+function demoBackend() {
+  const KEY = "yatzy-demo-db", subs = new Set();
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+  const parts = p => p.split("/").filter(Boolean);
+  const at = (t, p) => parts(p).reduce((o, k) => (o == null ? null : o[k] ?? null), t);
+  const put = (t, p, v) => setPath(t, parts(p).join("/"), v == null ? null : JSON.parse(JSON.stringify(v)));
+  const notify = () => { const t = load(); subs.forEach(s => { const v = at(t, s.p), j = JSON.stringify(v); if (j !== s.last) { s.last = j; s.cb(v); } }); };
+  const write = fn => { const t = load(); fn(t); try { localStorage.setItem(KEY, JSON.stringify(t)); } catch {} ; notify(); };
+  addEventListener("storage", e => { if (e.key === KEY) notify(); });
+  return {
+    demo: true,
+    listen(p, cb) { const s = { p, cb, last: undefined }; subs.add(s); setTimeout(() => { const v = at(load(), p); s.last = JSON.stringify(v); cb(v); }); return () => subs.delete(s); },
+    get: async p => at(load(), p),
+    set: async (p, v) => write(t => put(t, p, v)),
+    update: async (p, obj) => write(t => { for (const [k, v] of Object.entries(obj)) put(t, p + "/" + k, v); }),
+    remove: async p => write(t => put(t, p, null)),
+    onDisconnectRemove() {},
+  };
+}
+
+// ---------- state ----------
+// Both modes share one game shape: { no, first, turn, dice:"35126", held:"01001", rolls, seq, dir, scores:{pid:{box:pts}}, yb:{pid:n}, last }.
+// In a CPU game it lives in memory (and localStorage); online it lives at rooms/<key>/game and only the player whose turn it is writes it.
+const S = {
+  db: null, screen: "home", err: "", busy: false,
+  name: local.get("name", "") || (() => { try { return JSON.parse(localStorage.getItem("hitblow:name")) || JSON.parse(localStorage.getItem("umigame:name")) || ""; } catch { return ""; } })(),
+  pid: null, key: null, pass: "", room: undefined,
+  cg: null, strong: local.get("strong", true),
+  sel: null, anim: null, seenSeq: null, cpuTok: 0, recorded: "", newBest: false,
+};
+let unsubRoom = null;
+const roomPath = p => `rooms/${S.key}` + (p ? "/" + p : "");
+const touch = () => ({ updatedAt: Date.now() });
+const newGame = (no, first, seq) => ({ no, first, turn: first, dice: "00000", held: "00000", rolls: 0, seq: seq || 0, dir: -90, scores: {}, yb: {} });
+
+function view() {
+  let g, ids, names, me, role = "player", online = () => true, mode = S.screen;
+  if (mode === "cpu") {
+    g = S.cg; ids = ["me", "cpu"]; names = { me: "あなた", cpu: "CPU" }; me = "me";
+  } else {
+    const r = S.room; if (!r) return null;
+    g = r.game || newGame(1, r.hostId);
+    const host = r.hostId, guest = r.guestId || null;
+    role = S.pid === host || (guest && S.pid === guest) ? "player" : "watch";
+    me = role === "watch" ? host : S.pid;
+    ids = [me, me === host ? guest : host];
+    names = { [host]: r.hostName || "部屋を作った人" }; if (guest) names[guest] = r.guestName || "相手";
+    online = id => !!(r.members && r.members[id]);
+  }
+  const scores = g.scores || {}, yb = g.yb || {};
+  const T = Object.fromEntries(ids.filter(Boolean).map(id => [id, totals(scores[id], yb[id])]));
+  const opp = ids[1];
+  const phase = !opp ? "wait" : T[ids[0]].filled >= 13 && T[opp].filled >= 13 ? "over" : "play";
+  const dice = diceOf(g), held = String(g.held || "00000");
+  const animating = !!S.anim;
+  const myTurn = phase === "play" && role === "player" && g.turn === me;
+  const canRoll = myTurn && g.rolls < 3 && !animating;
+  const canScore = myTurn && g.rolls > 0 && !animating;
+  return { g, ids, names, me, opp, role, online, scores, yb, T, phase, dice, held, animating, myTurn, canRoll, canScore, mode };
+}
+
+// ---------- game actions (shared) ----------
+async function patchGame(p) {
+  if (S.screen === "cpu") {
+    for (const [k, v] of Object.entries(p)) setPath(S.cg, k, v);
+    local.set("cpu", S.cg);
+    afterChange();
+  } else {
+    await S.db.update(roomPath("game"), p);
+    S.db.update(roomPath(), touch());
+  }
+}
+function doRoll(g, dir) {
+  const held = g.rolls ? String(g.held) : "00000";
+  const dice = diceOf(g).map((x, i) => (held[i] === "1" ? x : d6())).join("");
+  const seq = (g.seq || 0) + 1;
+  startAnim(held, dir, seq);
+  return patchGame({ dice, held, rolls: g.rolls + 1, seq, dir: Math.round(dir) });
+}
+function doCommit(g, pid, id) {
+  const d = diceOf(g), sc = (g.scores || {})[pid] || {};
+  const val = scoreOf(id, d, jokerFor(sc, d));
+  const p = { [`scores/${pid}/${id}`]: val, turn: otherOf(pid), rolls: 0, held: "00000", last: { by: pid, cat: id, val } };
+  if (isYatzy(d) && sc.yatzy === 50) p[`yb/${pid}`] = ((g.yb || {})[pid] || 0) + 1;
+  S.sel = null;
+  return patchGame(p);
+}
+function otherOf(pid) { const v = view(); return v.ids[0] === pid ? v.ids[1] : v.ids[0]; }
+
+// UI entry points: only on my turn.
+function roll(dir = -90) {
+  const v = view(); if (!v || !v.canRoll) return;
+  S.sel = null;
+  if (navigator.vibrate) try { navigator.vibrate(25); } catch {}
+  doRoll(v.g, dir);
+}
+function toggleHold(i) {
+  const v = view(); if (!v || !v.canScore || v.g.rolls >= 3) return;
+  const held = v.held.split(""); held[i] = held[i] === "1" ? "0" : "1";
+  patchGame({ held: held.join("") });
+}
+function pickCell(id) {
+  const v = view(); if (!v || !v.canScore || (v.scores[v.me] || {})[id] != null) return;
+  if (S.sel === id) { doCommit(v.g, v.me, id); return; }
+  S.sel = id; render();
+}
+function commitSel() { const v = view(); if (v && v.canScore && S.sel) doCommit(v.g, v.me, S.sel); }
+
+// ---------- roll animation ----------
+// Re-renders keep the tumble going by giving the dice a negative animation-delay; faces flicker until it lands.
+function startAnim(held, dir, seq) {
+  const rad = dir * Math.PI / 180;
+  S.anim = { held, start: performance.now(), dx: -Math.cos(rad) * 90, dy: -Math.sin(rad) * 90, rots: Array.from({ length: 5 }, () => (Math.random() < .5 ? -1 : 1) * (360 + Math.random() * 360)) };
+  S.seenSeq = seq;
+  const a = S.anim;
+  const tick = () => {
+    if (S.anim !== a) return;
+    if (performance.now() - a.start >= ROLL_MS) { S.anim = null; render(); return; }
+    document.querySelectorAll(".tray .die.roll").forEach(el => (el.dataset.face = 1 + Math.floor(Math.random() * 6)));
+    setTimeout(tick, 70);
+  };
+  setTimeout(tick, 70);
+}
+// Called after every game change: animate other people's rolls, run the CPU, record results.
+function afterChange() {
+  const v = view(); if (!v) return;
+  const seq = v.g.seq || 0;
+  if (S.seenSeq == null) S.seenSeq = seq;
+  else if (seq > S.seenSeq && v.g.rolls > 0) startAnim(v.g.rolls > 1 ? v.held : "00000", v.g.dir ?? -90, seq);
+  else S.seenSeq = Math.max(S.seenSeq, seq);
+  if (v.phase === "over") record(v);
+  render();
+  if (v.mode === "cpu" && v.phase === "play" && v.g.turn === "cpu") cpuTurn();
+}
+function record(v) {
+  const rk = (v.mode === "cpu" ? "cpu" : S.key) + ":" + v.g.no + ":" + (v.g.first || "");
+  if (S.recorded === rk || v.role === "watch") return;
+  if (v.mode === "cpu") { if (S.cg.recorded) { S.recorded = rk; return; } S.cg.recorded = true; local.set("cpu", S.cg); }
+  S.recorded = rk;
+  const mine = v.T[v.me].total, theirs = v.T[v.opp].total;
+  const best = local.get("best", 0);
+  S.newBest = mine > best;
+  if (S.newBest) local.set("best", mine);
+  if (v.mode === "cpu") {
+    const rec = local.get("record", { win: 0, lose: 0, draw: 0 });
+    rec[mine > theirs ? "win" : mine < theirs ? "lose" : "draw"]++;
+    local.set("record", rec);
+  }
+}
+
+async function cpuTurn() {
+  const tok = ++S.cpuTok;
+  const alive = () => tok === S.cpuTok && S.screen === "cpu" && S.cg && S.cg.turn === "cpu";
+  await sleep(S.anim ? ROLL_MS + 500 : 700);
+  if (!alive()) return;
+  const sc = () => S.cg.scores.cpu || {};
+  while (alive()) {
+    // A reload in the middle of the CPU's turn resumes from whatever was already rolled.
+    if (S.cg.rolls === 0 || (S.cg.rolls < 3 && S.cg.held !== "11111")) {
+      doRoll(S.cg, -90 + (Math.random() * 50 - 25));
+      await sleep(ROLL_MS + 650);
+      if (!alive()) return;
+    }
+    const d = diceOf(S.cg), left = 3 - S.cg.rolls;
+    if (left <= 0) break;
+    const ai = makeAI(sc(), (S.cg.yb || {}).cpu || 0, S.strong);
+    const keep = ai.keep(d, left);
+    if (keep.length === 5) break;
+    const held = [0, 1, 2, 3, 4].map(i => (keep.includes(i) ? "1" : "0")).join("");
+    if (held !== S.cg.held) { patchGame({ held }); await sleep(900); if (!alive()) return; }
+  }
+  if (!alive()) return;
+  const ai = makeAI(sc(), (S.cg.yb || {}).cpu || 0, S.strong);
+  const id = ai.pick(diceOf(S.cg));
+  S.cpuPick = id; render();
+  await sleep(900);
+  if (!alive()) return;
+  S.cpuPick = null;
+  doCommit(S.cg, "cpu", id);
+}
+
+// ---------- CPU mode ----------
+function startCpu(resume) {
+  S.cpuTok++;
+  const saved = local.get("cpu", null);
+  if (resume && saved && saved.scores) S.cg = saved;
+  else { const prev = saved && saved.first; S.cg = newGame(((saved && saved.no) || 0) + 1, prev === "me" ? "cpu" : "me"); }
+  S.cg.scores = S.cg.scores || {}; S.cg.yb = S.cg.yb || {};
+  local.set("cpu", S.cg);
+  Object.assign(S, { screen: "cpu", sel: null, anim: null, seenSeq: S.cg.seq || 0, newBest: false, recorded: "" });
+  afterChange();
+}
+function goHome() {
+  S.cpuTok++;
+  if (unsubRoom) { unsubRoom(); unsubRoom = null; if (S.key && S.room) S.db.remove(`rooms/${S.key}/members/${S.pid}`).catch(() => {}); }
+  Object.assign(S, { screen: "home", key: null, room: undefined, anim: null, sel: null, cpuPick: null });
+  render();
+}
+
+// ---------- online rooms ----------
+function readLobby() {
+  S.name = clip(document.getElementById("name").value.trim(), 16);
+  S.pass = clip(document.getElementById("pass").value, 40);
+  local.set("name", S.name);
+  if (!S.name) return fail("名前を入れてください。");
+  if (S.pass.trim().length < 3) return fail("合言葉は3文字以上にしてください。");
+  return true;
+}
+function fail(msg) { S.err = msg; S.busy = false; render(); return false; }
+async function createRoom() {
+  if (!readLobby()) return;
+  S.busy = true; S.err = ""; render();
+  try {
+    const key = roomKey(S.pass), now = Date.now();
+    const cur = await S.db.get("rooms/" + key);
+    if (cur && cur.hostId !== S.pid && now - (cur.updatedAt || 0) < ROOM_TTL) return fail("この合言葉の部屋はもう使われています。別の合言葉にしてください。");
+    await S.db.set("rooms/" + key, { hostId: S.pid, hostName: S.name, game: newGame(1, S.pid), createdAt: now, updatedAt: now });
+    enter(key);
+  } catch (e) { fail("部屋を作れませんでした。通信状態を確認してください。"); console.error(e); }
+}
+async function joinRoom() {
+  if (!readLobby()) return;
+  S.busy = true; S.err = ""; render();
+  try {
+    const key = roomKey(S.pass);
+    const cur = await S.db.get("rooms/" + key);
+    if (!cur) return fail("その合言葉の部屋は見つかりません。相手に合言葉を確かめてください。");
+    if (cur.hostId !== S.pid && !cur.guestId) await S.db.update("rooms/" + key, { guestId: S.pid, guestName: S.name, ...touch() });
+    enter(key);
+  } catch (e) { fail("部屋に入れませんでした。通信状態を確認してください。"); console.error(e); }
+}
+function enter(key) {
+  Object.assign(S, { key, screen: "room", room: undefined, busy: false, err: "", sel: null, anim: null, seenSeq: null, newBest: false, recorded: "" });
+  local.set("last", { pass: S.pass });
+  S.db.set(`rooms/${key}/members/${S.pid}`, { name: S.name, joinedAt: Date.now() }).catch(() => {});
+  S.db.onDisconnectRemove(`rooms/${key}/members/${S.pid}`);
+  if (unsubRoom) unsubRoom();
+  unsubRoom = S.db.listen("rooms/" + key, v => {
+    if (v == null && S.room !== undefined) { goHome(); S.err = "部屋が閉じられました。"; render(); return; }
+    S.room = v; afterChange();
+  }, () => { goHome(); S.err = "部屋を読み込めませんでした。"; render(); });
+  render();
+}
+async function nextGame() {
+  const v = view();
+  if (v.mode === "cpu") { startCpu(false); return; }
+  S.newBest = false;
+  const first = v.g.first === v.ids[0] ? v.ids[1] : v.ids[0];
+  await S.db.update(roomPath(), { game: newGame((v.g.no || 1) + 1, first, v.g.seq), ...touch() });
+}
+async function closeRoom() { await S.db.remove(roomPath()); }
+
+// Two-step button: first press arms it, second press within 4s runs it.
+function confirmBtn(label, armed, run, cls = "btn small ghost") {
+  const b = h("button", { class: cls, type: "button" }, label); let t;
+  b.addEventListener("click", () => {
+    if (b.classList.contains("armed")) { clearTimeout(t); b.classList.remove("armed"); b.textContent = label; run(); return; }
+    b.classList.add("armed"); b.textContent = armed;
+    t = setTimeout(() => { b.classList.remove("armed"); b.textContent = label; }, 4000);
+  });
+  return b;
+}
+
+// ---------- swipe ----------
+// A drag across the tray rolls in the drag's direction; a short tap on a die keeps / releases it.
+let drag = null;
+function trayDown(e) {
+  drag = { x: e.clientX, y: e.clientY, t: performance.now(), die: e.target.closest(".die") };
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+}
+function trayUp(e) {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y, dist = Math.hypot(dx, dy), d = drag; drag = null;
+  if (dist >= 30) { roll(Math.atan2(dy, dx) * 180 / Math.PI); return; }
+  if (d.die && d.die.dataset.i != null) toggleHold(Number(d.die.dataset.i));
+}
+addEventListener("keydown", e => {
+  if (!(S.screen === "cpu" || S.screen === "room") || /^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === " " || e.key === "r") { roll(); e.preventDefault(); }
+  else if (/^[1-5]$/.test(e.key)) { toggleHold(Number(e.key) - 1); e.preventDefault(); }
+  else if (e.key === "Enter" && S.sel) { commitSel(); e.preventDefault(); }
+});
+
+// ---------- render ----------
+function render() {
+  const main = document.querySelector(".main"), top = main ? main.scrollTop : 0;
+  const keep = {};
+  document.querySelectorAll("input[id]").forEach(el => (keep[el.id] = el.value));
+  const act = document.activeElement, focusId = act && act.id;
+  $app.replaceChildren(S.screen === "home" ? home() : game());
+  for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (el && v != null) el.value = v; }
+  const nm = document.querySelector(".main"); if (nm) nm.scrollTop = top;
+  const back = focusId && document.getElementById(focusId);
+  if (back) back.focus({ preventScroll: true });
+}
+
+function dieEl(face, attrs = {}) {
+  return h("div", { class: "die" + (face ? "" : " blank"), "data-face": face || "", ...attrs }, Array.from({ length: 9 }, () => h("span", { class: "p" })));
+}
+
+function home() {
+  const last = local.get("last", {}), saved = local.get("cpu", null);
+  const resumable = saved && saved.scores && !saved.recorded && Object.keys(saved.scores).some(k => Object.keys(saved.scores[k] || {}).length);
+  const rec = local.get("record", { win: 0, lose: 0, draw: 0 }), best = local.get("best", 0);
+  return h("main", { class: "home" },
+    h("header", { class: "brand" },
+      h("span", { class: "tag" }, "サイコロ5つの役づくり"),
+      h("h1", null, "ヤッツィー"),
+      h("p", null, "サイコロ5つを1ターン3回まで振って、役を作ってスコア表を埋めていきます。13ターンで合計点の高いほうが勝ち。スマホならサイコロをスワイプして振れます。"),
+      h("div", { class: "mini", "aria-hidden": "true" }, [5, 5, 5, 5, 5].map(f => dieEl(f)))),
+    S.err ? h("p", { class: "err", role: "alert" }, S.err) : null,
+    h("section", { class: "panel" },
+      h("h2", null, "ひとりで：CPUと対戦"),
+      h("div", { class: "row" }, h("span", { class: "label" }, "CPUのつよさ"),
+        h("div", { class: "seg", role: "group", "aria-label": "CPUのつよさ" },
+          [[false, "ふつう"], [true, "つよい"]].map(([v, l]) => h("button", { type: "button", "aria-pressed": String(S.strong === v), onclick: () => { S.strong = v; local.set("strong", v); render(); } }, l)))),
+      h("div", { class: "stats" },
+        h("span", null, "自己ベスト ", h("b", null, best || "－")),
+        h("span", null, "CPU戦 ", h("b", null, `${rec.win}勝 ${rec.lose}敗`), rec.draw ? ` ${rec.draw}分` : "")),
+      h("div", { class: "row" },
+        resumable ? h("button", { class: "btn primary", type: "button", onclick: () => startCpu(true) }, "続きから") : null,
+        h("button", { class: resumable ? "btn" : "btn primary", type: "button", onclick: () => startCpu(false) }, resumable ? "新しく始める" : "CPUと対戦する"))),
+    h("section", { class: "panel" },
+      h("h2", null, "ふたりで：オンライン対戦"),
+      S.db && S.db.demo ? h("p", { class: "banner" }, "デモモードです。データベースの設定がまだなので、この端末の別タブ同士でだけ遊べます。") : null,
+      h("label", { class: "field" }, h("span", { class: "label" }, "あなたの名前"),
+        h("input", { id: "name", class: "text", maxlength: "16", placeholder: "ニックネーム", value: S.name, autocomplete: "nickname" })),
+      h("label", { class: "field" }, h("span", { class: "label" }, "合言葉"),
+        h("input", { id: "pass", class: "text", maxlength: "40", placeholder: "例: しろくま123", value: last.pass || "", autocomplete: "off" }),
+        h("span", { class: "muted", style: "font-size:13px" }, "同じ合言葉を入れた2人が、同じ部屋で対戦します。ひらがな・カタカナ、全角・半角の違いは区別しません。")),
+      h("div", { class: "row" },
+        h("button", { class: "btn primary", type: "button", disabled: S.busy || !S.db, onclick: joinRoom }, "部屋に入る"),
+        h("button", { class: "btn", type: "button", disabled: S.busy || !S.db, onclick: createRoom }, "部屋を作る"))),
+    h("section", { class: "panel" },
+      h("h2", null, "遊び方"),
+      h("ol", { class: "rules" },
+        h("li", null, "自分の番になったら、サイコロの上をスワイプ（または「振る」ボタン）で5つ全部を振ります。"),
+        h("li", null, "残したいサイコロをタップすると「キープ」になり、次はそれ以外だけを振り直します。1ターンに振れるのは3回までです。"),
+        h("li", null, "振ったらスコア表のどこか1つに記入します。入る点数が薄く表示されるので、選んでもう一度押すか「記入」ボタンで確定。役ができていない欄に入れると0点です。"),
+        h("li", null, "13ターンで13欄が全部埋まったら終了。上の6欄の合計が63点以上ならボーナス35点。"),
+        h("li", null, "ヤッツィー欄が50点のあとにもう一度ヤッツィーを出すと+100点。そのときはフルハウス・ストレートの欄にも満点で記入できます。")),
+      h("table", { class: "ptable" }, h("tbody", null, CATS.map(c => h("tr", null, h("td", null, c.name), h("td", null, c.hint)))))),
+    h("p", { class: "credit" }, "開発：tenwalker"));
+}
+
+function statusLine(v) {
+  const nm = id => (v.mode === "cpu" ? v.names[id] : `${v.names[id]}さん`);
+  if (v.phase === "wait") return h("div", { class: "status wait" }, "相手が入るのを待っています",
+    h("small", null, "合言葉 ", h("span", { class: "pass" }, S.pass || "（部屋を作ったときの合言葉）"), " を相手に伝えてください"));
+  if (v.phase === "over") return null;
+  const turnNo = Math.min(13, (v.T[v.g.turn] || { filled: 0 }).filled + 1);
+  const last = v.g.last && v.g.last.by !== v.me && v.g.rolls === 0 ? `${nm(v.g.last.by)}は「${CAT[v.g.last.cat].name}」に${v.g.last.val}点` : null;
+  if (v.myTurn) {
+    if (v.g.rolls === 0) return h("div", { class: "status mine" }, `あなたの番です（${turnNo}/13）`, h("small", null, last ? last + "。" : "", "サイコロをスワイプして振りましょう"));
+    if (v.animating) return h("div", { class: "status mine" }, "コロコロ…", h("small", null, " "));
+    if (v.g.rolls < 3) return h("div", { class: "status mine" }, `あと${3 - v.g.rolls}回振れます`, h("small", null, "残したいサイコロをタップ。スコア表の欄を選ぶと記入できます"));
+    return h("div", { class: "status mine" }, "記入する欄を選んでください", h("small", null, "薄い数字が入る点数です"));
+  }
+  const who = nm(v.g.turn);
+  const off = v.mode === "room" && !v.online(v.g.turn) ? `${who}がオフラインです` : null;
+  return h("div", { class: "status" }, `${who}の番です（${turnNo}/13）`,
+    h("small", null, off || (S.cpuPick ? `「${CAT[S.cpuPick].name}」に記入します` : v.g.rolls ? `${v.g.rolls}回目` : " ")));
+}
+
+function sheet(v) {
+  const [a, b] = v.ids;
+  const potential = v.canScore ? diceOf(v.g) : null;
+  const mySc = v.scores[v.me] || {};
+  const joker = potential && jokerFor(mySc, potential);
+  const head = id => h("th", { class: v.phase === "play" && v.g.turn === id && id ? "turn" : "" },
+    v.mode === "room" && id ? h("span", { class: "dot" + (v.online(id) ? "" : " off") }) : null,
+    id ? (id === v.me && v.role === "player" ? "あなた" : v.names[id]) : "相手");
+  const cell = (id, c) => {
+    if (!id) return h("td", { class: "v" });
+    const val = ((v.scores[id] || {})[c.id]);
+    const isLast = v.g.last && v.g.last.by === id && v.g.last.cat === c.id;
+    if (val != null) return h("td", { class: "v" + (val === 0 ? " zero" : "") + (isLast ? " last" : "") }, val);
+    if (id === v.me && potential) {
+      const s = scoreOf(c.id, potential, joker);
+      return h("td", { class: "v" }, h("button", { type: "button", class: (s ? "" : "z") + (S.sel === c.id ? " sel" : ""), "aria-label": `${c.name}に${s}点`, onclick: () => pickCell(c.id) }, s));
+    }
+    if (S.cpuPick === c.id && id === "cpu") return h("td", { class: "v last" }, scoreOf(c.id, diceOf(v.g), jokerFor(v.scores.cpu, diceOf(v.g))));
+    return h("td", { class: "v" });
+  };
+  const sumRow = (label, fn, cls = "sum") => h("tr", { class: cls }, h("th", { class: "cat" }, label), [a, b].map(id => h("td", { class: "v" }, id ? fn(v.T[id], id) : "")));
+  return h("table", { class: "sheet" },
+    h("colgroup", null, h("col", { class: "c-name" }), h("col", { class: "c-p" }), h("col", { class: "c-p" })),
+    h("thead", null, h("tr", null, h("th", null, ""), head(a), head(b))),
+    h("tbody", null,
+      UPPER.map(c => h("tr", null, h("th", { class: "cat", title: c.hint }, c.name, h("small", null, c.hint)), cell(a, c), cell(b, c))),
+      sumRow("上段 小計", t => [String(t.upper), h("span", { class: "prog" }, t.upper >= 63 ? "達成" : `あと${63 - t.upper}`)]),
+      sumRow(["ボーナス", h("small", null, "上段63点以上で35")], t => (t.bonus ? "35" : "0")),
+      LOWER.map(c => h("tr", null, h("th", { class: "cat", title: c.hint }, c.name, h("small", null, c.hint)), cell(a, c), cell(b, c))),
+      sumRow("ヤッツィーボーナス", t => String(t.ybonus)),
+      sumRow("合計", t => String(t.total), "total")));
+}
+
+function resultCard(v) {
+  const mine = v.T[v.ids[0]].total, theirs = v.T[v.ids[1]].total;
+  let title, cls = "";
+  if (mine === theirs) title = "引き分け";
+  else if (v.role === "watch") title = `${v.names[mine > theirs ? v.ids[0] : v.ids[1]]}さんの勝ち`;
+  else if (mine > theirs) { title = "あなたの勝ち！"; cls = " won"; }
+  else { title = "負け…"; cls = " lost"; }
+  return h("section", { class: "result" + cls },
+    h("h2", null, title),
+    h("p", null, `${v.names[v.ids[0]]} ${mine}点 ／ ${v.names[v.ids[1]]} ${theirs}点`),
+    S.newBest && v.role === "player" ? h("p", { class: "newbest" }, "自己ベスト更新！") : null,
+    v.role === "player" ? h("div", { class: "row", style: "justify-content:center" },
+      h("button", { class: "btn primary", type: "button", onclick: nextGame }, "もう一度（先攻・後攻を交代）"),
+      v.mode === "cpu" ? h("button", { class: "btn", type: "button", onclick: goHome }, "メニューへ") : null) : null);
+}
+
+function dock(v) {
+  if (v.phase !== "play") return null;
+  const a = S.anim, now = performance.now();
+  const showDice = v.g.rolls > 0 || a;
+  const tray = h("div", { class: "tray" + (v.canRoll ? " can" : ""), onpointerdown: trayDown, onpointerup: trayUp, onpointercancel: () => (drag = null) },
+    v.canRoll ? h("span", { class: "swipe" }, "↑ スワイプして振る") : null,
+    v.dice.map((f, i) => {
+      const held = v.g.rolls > 0 && v.held[i] === "1";
+      const rolling = a && a.held[i] !== "1";
+      const attrs = { "data-i": String(i), role: v.canScore && v.g.rolls < 3 ? "button" : null, "aria-pressed": v.canScore ? String(held) : null, "aria-label": showDice ? `${f}の目${held ? "（キープ中）" : ""}` : "まだ振っていません" };
+      const el = dieEl(showDice ? f : 0, attrs);
+      if (held && !rolling) el.classList.add("held");
+      if (rolling) {
+        el.classList.add("roll");
+        el.style.cssText = `--dx:${a.dx}px;--dy:${a.dy}px;--rot:${a.rots[i]}deg;--dur:${ROLL_MS}ms;animation-delay:${-(now - a.start)}ms`;
+      }
+      return h("div", { class: "slotd" }, h("span", { class: "keep" }, held && !rolling ? "キープ" : ""), el);
+    }));
+  const parts = [tray];
+  if (v.myTurn) {
+    const sc = S.sel && scoreOf(S.sel, v.dice, jokerFor(v.scores[v.me], v.dice));
+    parts.push(h("div", { class: "controls" },
+      h("div", { class: "pips3", "aria-label": `${v.g.rolls}回振りました` }, [0, 1, 2].map(i => h("span", { class: i < v.g.rolls ? "used" : "" }))),
+      h("button", { class: "btn rollb" + (v.g.rolls === 0 ? " primary" : ""), type: "button", disabled: !v.canRoll, onclick: () => roll() }, v.g.rolls === 0 ? "振る" : v.g.rolls < 3 ? `振る（あと${3 - v.g.rolls}）` : "振れません"),
+      h("button", { class: "btn commit" + (S.sel ? " primary" : ""), type: "button", disabled: !(v.canScore && S.sel), onclick: commitSel },
+        S.sel ? `${CAT[S.sel].name}に${sc}点` : "欄を選んで記入")));
+  }
+  return h("div", { class: "dock" }, parts);
+}
+
+function game() {
+  const v = view();
+  if (!v) return h("p", { class: "center" }, "部屋に入っています…");
+  const kids = [statusLine(v)];
+  if (v.phase === "over") kids.push(resultCard(v));
+  if (v.role === "watch") kids.push(h("p", { class: "muted", style: "font-size:13px;text-align:center;margin:0" }, "この部屋はもう2人そろっているので、観戦モードです。"));
+  kids.push(sheet(v));
+  return h("div", { style: "display:contents" },
+    h("div", { class: "top" },
+      h("span", { class: "name" }, "ヤッツィー"),
+      h("span", { class: "where" }, v.mode === "cpu" ? `CPU（${S.strong ? "つよい" : "ふつう"}）と対戦` : `${v.g.no || 1}戦目`),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn small ghost", type: "button", onclick: goHome }, v.mode === "cpu" ? "メニュー" : "退出"),
+      v.mode === "room" && S.room && S.room.hostId === S.pid ? confirmBtn("部屋を閉じる", "もう一度押すと削除", closeRoom) : null),
+    h("div", { class: "main", "aria-live": "polite" }, kids.filter(Boolean)),
+    dock(v));
+}
+
+// ---------- boot ----------
+(async () => {
+  const cfg = window.FIREBASE_CONFIG || {};
+  if (!cfg.databaseURL) { try { S.pid = sessionStorage.getItem("yatzy:pid") || rid(); sessionStorage.setItem("yatzy:pid", S.pid); } catch { S.pid = rid(); } }
+  else S.pid = local.get("pid", null) || (() => { const v = rid(); local.set("pid", v); return v; })();
+  render();
+  try { S.db = cfg.databaseURL ? await firebaseBackend(cfg) : demoBackend(); }
+  catch (e) { console.error(e); S.err = "データベースにつながりませんでした（CPU対戦は遊べます）。"; }
+  if (S.screen === "home") render();
+})();
+</script>
+</body>
+</html>
