@@ -74,9 +74,10 @@ input.text, select.text { border: 1px solid var(--line); background: var(--bg); 
 .topic .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .miss-count { font-size: 13px; color: var(--muted); }
 .topic h2 { font-family: var(--font-display); font-size: clamp(22px, 5.5vw, 28px); line-height: 1.4; margin: 0; text-wrap: balance; }
-.scale { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
-.scale .bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--sunk), var(--accent)); }
+.scale { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; font-size: 14px; line-height: 1.5; }
+.scale .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--sunk), var(--accent)); margin-block: 2px; }
 .scale b { font-family: var(--font-display); font-size: 16px; }
+.scale .hi { text-align: right; }
 
 .section-title { font-family: var(--font-display); font-size: 17px; margin: 0; }
 .table { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; min-height: 40px; }
@@ -178,6 +179,7 @@ async function firebaseBackend(cfg) {
     push: async (p, v) => { const k = d.push(r(p)); await d.set(k, v); return k.key; },
     tx: (p, fn) => d.runTransaction(r(p), fn),
     onDisconnectRemove: p => d.onDisconnect(r(p)).remove(),
+    onConnected: cb => d.onValue(r(".info/connected"), s => { if (s.val() === true) cb(); }),
   };
 }
 // Demo mode: the "database" is localStorage, shared only between tabs of this browser.
@@ -205,6 +207,7 @@ function demoBackend() {
     push: async (p, v) => { const k = Date.now().toString(36).padStart(9, "0") + (seq++).toString(36).padStart(3, "0") + rid().slice(0, 4); write(t => put(t, p + "/" + k, v)); return k; },
     tx: async (p, fn) => write(t => { const v = fn(JSON.parse(JSON.stringify(at(t, p)))); if (v !== undefined) put(t, p, v); }),
     onDisconnectRemove() {},
+    onConnected() {},
   };
 }
 
@@ -212,10 +215,12 @@ function demoBackend() {
 const S = {
   db: null, screen: "lobby", err: "", busy: false,
   name: local.get("name", ""), pid: null,
-  key: null, pass: "", room: undefined, count: [1, 2, 3].includes(local.get("count", 1)) ? local.get("count", 1) : 1,
+  key: null, pass: "", room: undefined, armed: null, count: [1, 2, 3].includes(local.get("count", 1)) ? local.get("count", 1) : 1,
 };
 let unsubRoom = null;
 const isHost = () => S.room && S.room.hostId === S.pid;
+// The host runs the game; if the host has dropped out, anyone still in the room can, so the room never gets stuck.
+const canLead = () => isHost() || !!(S.room && !(S.room.members || {})[S.room.hostId]);
 const game = () => (S.room && S.room.game) || null;
 const settings = () => ({ chat: true, ...((S.room && S.room.settings) || {}) });
 
@@ -251,10 +256,9 @@ async function joinRoom() {
   } catch (e) { fail("部屋に入れませんでした。通信状態を確認してください。"); console.error(e); }
 }
 function enter(key) {
-  Object.assign(S, { key, screen: "room", room: undefined, busy: false, err: "" });
+  Object.assign(S, { key, screen: "room", room: undefined, busy: false, err: "", armed: null });
   local.set("last", { pass: S.pass });
-  S.db.set(`rooms/${key}/members/${S.pid}`, { name: S.name, joinedAt: Date.now() }).catch(() => {});
-  S.db.onDisconnectRemove(`rooms/${key}/members/${S.pid}`);
+  rejoin();
   if (unsubRoom) unsubRoom();
   unsubRoom = S.db.listen("rooms/" + key, v => {
     if (v == null && S.room !== undefined) { leave("部屋が閉じられました。"); return; }
@@ -265,8 +269,20 @@ function enter(key) {
 function leave(msg) {
   if (unsubRoom) unsubRoom(); unsubRoom = null;
   if (S.key && S.room) S.db.remove(`rooms/${S.key}/members/${S.pid}`).catch(() => {});
-  Object.assign(S, { screen: "lobby", key: null, room: undefined, err: msg || "" });
+  Object.assign(S, { screen: "lobby", key: null, room: undefined, err: msg || "", armed: null });
   render();
+}
+// Firebase removes our member entry whenever the connection drops (a phone going to sleep, switching apps).
+// Put it back on every reconnect, but only while the room still exists, so a closed room is not brought back.
+async function rejoin() {
+  const key = S.key;
+  if (!key) return;
+  try {
+    if ((await S.db.get(`rooms/${key}/hostId`)) == null || S.key !== key) return;
+    await S.db.onDisconnectRemove(`rooms/${key}/members/${S.pid}`);
+    if (S.key !== key) return;
+    await S.db.set(`rooms/${key}/members/${S.pid}`, { name: S.name, joinedAt: Date.now() });
+  } catch (e) { console.error(e); }
 }
 
 // ---------- room actions ----------
@@ -287,7 +303,7 @@ const maxCount = n => Math.max(1, Math.min(3, Math.floor(100 / Math.max(1, n))))
 async function deal(count) {
   const r = S.room;
   const ms = Object.entries(r.members || {});
-  if (!ms.length) return;
+  if (!ms.some(([pid]) => pid === S.pid)) ms.push([S.pid, { name: S.name }]);
   const cnt = Math.min(Math.max(1, count | 0), maxCount(ms.length));
   const deck = shuffle(Array.from({ length: 100 }, (_, i) => i + 1));
   const hands = {};
@@ -347,14 +363,16 @@ async function sendChat() {
 async function closeRoom() { await S.db.remove(roomPath()); }
 
 // Two-step button: first press arms it, second press within 4s runs it.
-function confirmBtn(label, armed, run, cls = "btn small ghost") {
-  const b = h("button", { class: cls, type: "button" }, label); let t;
-  b.addEventListener("click", () => {
-    if (b.classList.contains("armed")) { clearTimeout(t); b.classList.remove("armed"); b.textContent = label; run(); return; }
-    b.classList.add("armed"); b.textContent = armed;
-    t = setTimeout(() => { b.classList.remove("armed"); b.textContent = label; }, 4000);
-  });
-  return b;
+// The armed state lives in S, so a re-render caused by someone else's move does not reset it.
+let armTimer = null;
+function confirmBtn(key, label, armed, run, cls = "btn small ghost") {
+  const on = S.armed === key;
+  return h("button", { class: cls + (on ? " armed" : ""), type: "button", onclick: () => {
+    clearTimeout(armTimer);
+    if (S.armed === key) { S.armed = null; render(); run(); return; }
+    S.armed = key; render();
+    armTimer = setTimeout(() => { if (S.armed === key) { S.armed = null; render(); } }, 4000);
+  } }, on ? armed : label);
 }
 
 // ---------- render ----------
@@ -434,19 +452,20 @@ function topicPanel(g) {
     h("span", { class: "label" }, "お題"),
     h("h2", null, t.t || ""),
     h("div", { class: "scale" },
-      h("span", null, h("b", null, "1"), " ", t.lo || ""),
+      h("b", null, "1"), h("b", { class: "hi" }, "100"),
       h("span", { class: "bar" }),
-      h("span", null, t.hi || "", " ", h("b", null, "100"))));
+      h("span", null, t.lo || ""), h("span", { class: "hi" }, t.hi || "")));
 }
 
 function room() {
-  const r = S.room, g = game(), host = isHost(), st = settings();
+  const r = S.room, g = game(), host = isHost(), lead = canLead(), st = settings();
   if (r === undefined) return h("p", { class: "center" }, "部屋に入っています…");
+  const stand = !host && lead ? h("p", { class: "note" }, `部屋主の${r.hostName}さんの接続が切れているので、代わりに進められます。`) : null;
   const members = Object.values(r.members || {}).map(m => m.name);
   const kids = [h("div", { class: "members" }, `参加中（${members.length}人）：`, members.join("、"))];
 
   if (!g) {
-    kids.push(host ? settingsPanel(false) : h("p", { class: "center" }, `${r.hostName}さんがゲームを始めるのを待っています。`));
+    kids.push(lead ? [stand, settingsPanel(false)] : h("p", { class: "center" }, `${r.hostName}さんがゲームを始めるのを待っています。`));
   } else {
     kids.push(topicPanel(g));
     const pile = arr(g.pile);
@@ -457,7 +476,7 @@ function room() {
       kids.push(h("section", { class: "result " + (g.miss ? "over" : "clear") },
         h("h3", null, g.miss ? "ゲームオーバー" : "成功！"),
         h("p", { style: "margin:0" }, g.miss ? `順番が逆になったカードが ${g.miss} 枚ありました（赤いカード）。` : "全員のカードが小さい順に並びました。"),
-        host ? [countPicker(), h("div", { class: "row" }, h("button", { class: "btn primary", type: "button", onclick: startGame }, "もう一度遊ぶ"))]
+        lead ? [stand, countPicker(), h("div", { class: "row" }, h("button", { class: "btn primary", type: "button", onclick: startGame }, "もう一度遊ぶ"))]
           : h("p", { class: "note" }, `${r.hostName}さんが次を始めるのを待っています。`)));
     }
 
@@ -472,7 +491,7 @@ function room() {
       })));
 
     const mine = g.hands && g.hands[S.pid];
-    if (!mine) kids.push(h("p", { class: "banner" }, "このゲームの途中から参加しました。次に配られるときから参加できます。" + (host ? "すぐ入れたいときは下の「配り直す」を押してください。" : "")));
+    if (!mine) kids.push(h("p", { class: "banner" }, "このゲームの途中から参加しました。次に配られるときから参加できます。" + (lead ? "すぐ入れたいときは下の「配り直す」を押してください。" : "")));
     else if (g.status === "play") {
       const cards = arr(mine.cards).map((c, i) => ({ ...c, i })).filter(c => c.state === "hand");
       kids.push(h("section", { class: "hand" },
@@ -485,14 +504,14 @@ function room() {
               h("input", { id: `hint-${g.round}-${c.i}`, class: "text", maxlength: "30", placeholder: "ひとこと（例：推しと目が合う）", value: c.hint || "",
                 onchange: e => saveHint(c.i, e.target.value),
                 onkeydown: e => { if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); saveHint(c.i, e.target.value); e.target.blur(); } } })),
-            h("div", { class: "row" }, confirmBtn("このカードを出す", "もう一度押すと出します", () => playCard(c.i), "btn small primary")))))
+            h("div", { class: "row" }, confirmBtn(`play-${g.round}-${c.i}`, "このカードを出す", "もう一度押すと出します", () => playCard(c.i), "btn small primary")))))
           : h("p", { class: "note" }, "あなたのカードは全部出しました。みんなを見守りましょう。")));
     }
-    // Someone who left with cards still in hand would stall the reveal forever; point the host to 配り直す.
+    // Someone who dropped out with cards still in hand would stall the reveal; point to 配り直す.
     const gone = g.status === "play" ? hands.filter(([pid, hd]) => !(r.members || {})[pid] && arr(hd.cards).some(x => x.state === "hand")).map(([, hd]) => hd.name) : [];
-    if (gone.length) kids.push(h("p", { class: "banner" }, `${gone.join("、")}さんがカードを持ったまま退室しました。` + (host ? "戻ってこないときは「配り直す」を押してください。" : `${r.hostName}さんに配り直してもらいましょう。`)));
-    if (host) kids.push(h("div", { class: "row" },
-      g.status === "play" ? confirmBtn("配り直す", "もう一度押すと配り直します", redeal) : null),
+    if (gone.length) kids.push(h("p", { class: "banner" }, `${gone.join("、")}さんの接続が切れています（まだカードを持っています）。` + (lead ? "戻ってこないときは「配り直す」を押してください。" : "戻ってこないときは、部屋主に配り直してもらいましょう。")));
+    if (lead) kids.push(h("div", { class: "row" },
+      g.status === "play" ? confirmBtn("redeal", "配り直す", "もう一度押すと配り直します", redeal) : null),
       settingsPanel(true));
   }
 
@@ -509,11 +528,11 @@ function room() {
 
   return h("div", { style: "display:contents" },
     h("header", { class: "top" },
-      confirmBtn("← 退室", "もう一度押すと退室", () => leave("")),
+      confirmBtn("leave", "← 退室", "もう一度押すと退室", () => leave("")),
       h("span", { class: "name" }, "いとおかし"),
       h("span", { class: "where" }, host ? "あなたが部屋主" : `部屋主：${r.hostName}`),
       h("span", { class: "spacer" }),
-      host ? confirmBtn("部屋を閉じる", "もう一度押すと部屋を削除", closeRoom) : null),
+      host ? confirmBtn("close", "部屋を閉じる", "もう一度押すと部屋を削除", closeRoom) : null),
     h("div", { class: "main" }, kids),
     chat);
 }
@@ -525,6 +544,7 @@ function room() {
   else S.pid = local.get("pid", null) || (() => { const v = rid(); local.set("pid", v); return v; })();
   try { S.db = cfg.databaseURL ? await firebaseBackend(cfg) : demoBackend(); }
   catch (e) { console.error(e); S.err = "データベースにつながりませんでした。"; }
+  if (S.db) S.db.onConnected(rejoin);
   render();
 })();
 </script>
