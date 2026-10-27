@@ -252,7 +252,9 @@ const diceOf = g => String(g.dice || "00000").split("").map(Number);
 
 // ---------- CPU ----------
 // Expected-value player over the 252 possible dice sets. V0 = how good a final hand is
-// (best box minus that box's typical score; the weaker CPU just chases raw points), E_k(kept dice) = expected value after rerolling the rest.
+// (best box minus that box's typical score), E_k(kept dice) = expected value after rerolling the rest.
+// Fair dice top out around 245 points on average, so the CPU also gets dice luck: each of its rolls is
+// tried several times and the best result for it is kept (CPU_TRIES per level, tuned by simulation).
 const PAR = { three: 17, four: 10, full: 16, sst: 18, lst: 17, yatzy: 12, chance: 21 };
 const skey = arr => arr.slice().sort().join("");
 function subKeys(key) {
@@ -260,12 +262,11 @@ function subKeys(key) {
   for (let m = 0; m < 32; m++) { let s = ""; for (let i = 0; i < 5; i++) if (m >> i & 1) s += key[i]; out.add(s); }
   return [...out];
 }
-function makeAI(sc, strong = true) {
+function makeAI(sc) {
   const open = CATS.filter(c => sc[c.id] == null).map(c => c.id);
   const upper = totals(sc).upper, needBonus = upper < 63;
   const utility = (id, d) => {
     const s = scoreOf(id, d), face = CAT[id].face;
-    if (!strong) return s;
     let u = face ? s - face * 2.6 + (needBonus && counts(d)[face] >= 3 ? 6 : 0) : s - PAR[id];
     return u;
   };
@@ -294,20 +295,47 @@ function makeAI(sc, strong = true) {
   return {
     // Which dice to keep with `left` rolls remaining; keeping all five means stop rolling.
     keep(d, left) {
-      const E = strong && left >= 2 ? E1 : E0;
-      const ranked = subKeys(skey(d)).map(s => [s, E(s)]).sort((x, y) => y[1] - x[1]);
-      // The weaker CPU sometimes settles for its second idea.
-      const best = ranked[!strong && ranked.length > 1 && Math.random() < .3 ? 1 : 0][0];
+      const E = left >= 2 ? E1 : E0;
+      let best = null, bv = -Infinity;
+      for (const s of subKeys(skey(d))) { const v = E(s); if (v > bv + 1e-9) { bv = v; best = s; } }
       const used = new Set(), idx = [];
       for (const ch of best) { const i = d.findIndex((x, j) => !used.has(j) && String(x) === ch); used.add(i); idx.push(i); }
       return idx;
     },
+    // How good these dice are with `left` rolls still to come.
+    value(d, left) { const k = skey(d); return left <= 0 ? V0(k) : V1(k); },
     pick(d) {
       let best = open[0], bv = -Infinity;
       for (const id of open) { const u = utility(id, d); if (u > bv) { bv = u; best = id; } }
       return best;
     },
   };
+}
+
+const CPU_TRIES = { normal: 1.15, strong: 1.6 };  // ≈ 240 / 280 points on average
+// Roll the CPU's free dice `tries` times (fractional = sometimes one more) and keep the best outcome for it.
+function cpuDice(ai, dice, held, left, tries) {
+  const n = Math.floor(tries) + (Math.random() < tries % 1 ? 1 : 0);
+  let best = null, bv = -Infinity;
+  for (let t = 0; t < Math.max(1, n); t++) {
+    const d = dice.map((x, i) => (held[i] === "1" ? x : d6()));
+    const v = ai.value(d, left);
+    if (v > bv) { bv = v; best = d; }
+  }
+  return best;
+}
+
+// Hands that score the most in each box (lucky game for the player, the awakened CPU's late game).
+const BEST = { ones: "11111", twos: "22222", threes: "33333", fours: "44444", fives: "55555", sixes: "66666",
+  three: "66666", four: "66666", full: "66655", sst: "34566", lst: "23456", yatzy: "66666", chance: "66666" };
+const MAX_TOTAL = 378;
+// Awakened CPU (1% of CPU games): it plays terribly for its first AWAKE_AFTER turns, then every box it fills scores the maximum.
+const AWAKE_AFTER = 6;
+const awakened = sc => Object.keys(sc || {}).length >= AWAKE_AFTER;
+// Which of the dice already fit `target`'s best hand.
+function fitting(target, dice) {
+  const need = BEST[target].split("").map(Number);
+  return dice.map(x => { const j = need.indexOf(x); if (j >= 0) { need.splice(j, 1); return true; } return false; });
 }
 
 // ---------- backends ----------
@@ -402,22 +430,23 @@ async function patchGame(p) {
 function doRoll(g, dir) {
   const held = g.rolls ? String(g.held) : "00000";
   const p = { held, rolls: g.rolls + 1, seq: (g.seq || 0) + 1, dir: Math.round(dir) };
+  const sc = (g.scores || {})[g.turn] || {};
   if (S.screen === "cpu" && g.lucky && g.turn === "me") Object.assign(p, luckyRoll(g, held));
+  else if (S.screen === "cpu" && g.turn === "cpu" && g.awake && awakened(sc)) Object.assign(p, luckyRoll(g, held));
+  else if (S.screen === "cpu" && g.turn === "cpu" && !(g.awake && !awakened(sc)))
+    p.dice = cpuDice(makeAI(sc), diceOf(g), held, 2 - g.rolls, CPU_TRIES[S.strong ? "strong" : "normal"]).join("");
   else p.dice = diceOf(g).map((x, i) => (held[i] === "1" ? x : d6())).join("");
   startAnim(held, dir, p.seq);
   return patchGame(p);
 }
 
-// Lucky game (2% of CPU games): each turn the player's dice are dealt toward the best hand for one open box,
+// Lucky game (0.5% of CPU games): each turn the player's dice are dealt toward the best hand for one open box,
 // arriving over the three rolls (2 → 4 → 5 matching dice). Keeping the right dice, rolling all three times and
-// filling the right box every turn reaches the theoretical maximum of 378.
-const BEST = { ones: "11111", twos: "22222", threes: "33333", fours: "44444", fives: "55555", sixes: "66666",
-  three: "66666", four: "66666", full: "66655", sst: "34566", lst: "23456", yatzy: "66666", chance: "66666" };
-const MAX_TOTAL = 378;
+// filling the right box every turn reaches the theoretical maximum of 378. The awakened CPU's late game uses it too.
 function luckyRoll(g, held) {
   let target = g.target;
   if (!g.rolls || !target) {
-    const open = CATS.filter(c => ((g.scores || {}).me || {})[c.id] == null).map(c => c.id);
+    const open = CATS.filter(c => ((g.scores || {})[g.turn] || {})[c.id] == null).map(c => c.id);
     target = open[Math.floor(Math.random() * open.length)];
   }
   const dice = diceOf(g), need = BEST[target].split("").map(Number);
@@ -521,6 +550,7 @@ async function cpuTurn() {
   await sleep(S.anim ? ROLL_MS + 500 : 700);
   if (!alive()) return;
   const sc = () => S.cg.scores.cpu || {};
+  const mode = !S.cg.awake ? "ai" : awakened(sc()) ? "max" : "sleepy";
   while (alive()) {
     // A reload in the middle of the CPU's turn resumes from whatever was already rolled.
     if (S.cg.rolls === 0 || (S.cg.rolls < 3 && S.cg.held !== "11111")) {
@@ -529,16 +559,18 @@ async function cpuTurn() {
       if (!alive()) return;
     }
     const d = diceOf(S.cg), left = 3 - S.cg.rolls;
-    if (left <= 0) break;
-    const ai = makeAI(sc(), S.strong);
-    const keep = ai.keep(d, left);
+    if (left <= 0 || mode === "sleepy") break;
+    const keep = mode === "max" ? [0, 1, 2, 3, 4].filter(i => fitting(S.cg.target, d)[i]) : makeAI(sc()).keep(d, left);
     if (keep.length === 5) break;
     const held = [0, 1, 2, 3, 4].map(i => (keep.includes(i) ? "1" : "0")).join("");
     if (held !== S.cg.held) { patchGame({ held }); await sleep(900); if (!alive()) return; }
   }
   if (!alive()) return;
-  const ai = makeAI(sc(), S.strong);
-  const id = ai.pick(diceOf(S.cg));
+  const d = diceOf(S.cg), open = CATS.filter(c => sc()[c.id] == null).map(c => c.id);
+  const id = mode === "max" ? S.cg.target
+    // Sleepy: throw away the small upper boxes with poor scores, leaving the big ones for the comeback.
+    : mode === "sleepy" ? (open.filter(id => CAT[id].face).length ? open.filter(id => CAT[id].face) : open).reduce((a, b) => (scoreOf(b, d) + Math.random() < scoreOf(a, d) + Math.random() ? b : a))
+    : makeAI(sc()).pick(d);
   S.cpuPick = id; render();
   await sleep(900);
   if (!alive()) return;
@@ -551,7 +583,7 @@ function startCpu(resume) {
   S.cpuTok++;
   const saved = local.get("cpu", null);
   if (resume && saved && saved.scores) S.cg = saved;
-  else S.cg = { ...newGame(((saved && saved.no) || 0) + 1, "me"), lucky: Math.random() < .02 || /[?&]lucky\b/.test(location.search) };
+  else S.cg = { ...newGame(((saved && saved.no) || 0) + 1, "me"), lucky: Math.random() < .005 || /[?&]lucky\b/.test(location.search), awake: Math.random() < .01 || /[?&]awake\b/.test(location.search) };
   S.cg.scores = S.cg.scores || {};
   local.set("cpu", S.cg);
   Object.assign(S, { screen: "cpu", sel: null, anim: null, seenSeq: S.cg.seq || 0, newBest: false, recorded: "" });
@@ -761,7 +793,8 @@ function resultCard(v) {
     h("p", null, `${v.names[v.ids[0]]} ${mine}点 ／ ${v.names[v.ids[1]]} ${theirs}点`),
     S.newBest && v.role === "player" ? h("p", { class: "newbest" }, "自己ベスト更新！") : null,
     v.mode === "cpu" && v.g.lucky ? h("p", { class: "newbest" }, mine >= MAX_TOTAL ? `理論値${MAX_TOTAL}点 達成！`
-      : `じつはこの回は、うまく選べば理論値${MAX_TOTAL}点が出せるラッキーゲーム（2%）でした`) : null,
+      : `じつはこの回は、うまく選べば理論値${MAX_TOTAL}点が出せるラッキーゲーム（0.5%）でした`) : null,
+    v.mode === "cpu" && v.g.awake ? h("p", { class: "newbest" }, `じつはこの回のCPUは、${AWAKE_AFTER}ターン目のあとから全部の欄で最高点を出す「覚醒モード」（1%）でした`) : null,
     v.role === "player" ? h("div", { class: "row", style: "justify-content:center" },
       h("button", { class: "btn primary", type: "button", onclick: nextGame }, v.mode === "cpu" ? "もう一度" : "もう一度（先攻・後攻を交代）"),
       v.mode === "cpu" ? h("button", { class: "btn", type: "button", onclick: goHome }, "メニューへ") : null) : null);
