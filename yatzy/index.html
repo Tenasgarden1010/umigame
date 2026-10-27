@@ -792,9 +792,8 @@ function resultCard(v) {
     h("h2", null, title),
     h("p", null, `${v.names[v.ids[0]]} ${mine}点 ／ ${v.names[v.ids[1]]} ${theirs}点`),
     S.newBest && v.role === "player" ? h("p", { class: "newbest" }, "自己ベスト更新！") : null,
-    v.mode === "cpu" && v.g.lucky ? h("p", { class: "newbest" }, mine >= MAX_TOTAL ? `理論値${MAX_TOTAL}点 達成！`
-      : `じつはこの回は、うまく選べば理論値${MAX_TOTAL}点が出せるラッキーゲーム（0.5%）でした`) : null,
-    v.mode === "cpu" && v.g.awake ? h("p", { class: "newbest" }, `じつはこの回のCPUは、${AWAKE_AFTER}ターン目のあとから全部の欄で最高点を出す「覚醒モード」（1%）でした`) : null,
+    // The lucky game and the awakened CPU are never revealed; only a perfect score is announced.
+    v.role === "player" && mine >= MAX_TOTAL ? h("p", { class: "newbest" }, `理論値${MAX_TOTAL}点 達成！`) : null,
     v.role === "player" ? h("div", { class: "row", style: "justify-content:center" },
       h("button", { class: "btn primary", type: "button", onclick: nextGame }, v.mode === "cpu" ? "もう一度" : "もう一度（先攻・後攻を交代）"),
       v.mode === "cpu" ? h("button", { class: "btn", type: "button", onclick: goHome }, "メニューへ") : null) : null);
