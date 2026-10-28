@@ -312,6 +312,22 @@ function makeAI(sc) {
   };
 }
 
+// Put the CPU's plan into words from the dice it keeps (ぞろ目 / ストレート / フルハウス / 大きい数字),
+// falling back to the box it most often ends up using after rerolling the rest.
+function aimText(ai, d, keep) {
+  const vals = keep.map(i => d[i]).sort(), kinds = [...new Set(vals)], c = counts(vals);
+  if (!vals.length) return "全部振り直し";
+  if (kinds.length === 1 && vals.length >= 2) return `${kinds[0]}のぞろ目狙い`;
+  if (vals.length >= 3 && kinds.length === vals.length && kinds[kinds.length - 1] - kinds[0] <= 4) return "ストレート狙い";
+  if (kinds.length === 2 && vals.length === 4 && kinds.every(k => c[k] === 2)) return "フルハウス狙い";
+  if (vals.every(x => x >= 4)) return "大きい数字狙い";
+  return `「${CAT[aimOf(ai, d, keep)].name}」狙い`;
+}
+function aimOf(ai, d, keep) {
+  const n = {};
+  for (let t = 0; t < 240; t++) { const id = ai.pick(d.map((x, i) => (keep.includes(i) ? x : d6()))); n[id] = (n[id] || 0) + 1; }
+  return Object.keys(n).reduce((a, b) => (n[b] > n[a] ? b : a));
+}
 const CPU_TRIES = { normal: 1.15, strong: 1.6 };  // ≈ 240 / 280 points on average
 // Roll the CPU's free dice `tries` times (fractional = sometimes one more) and keep the best outcome for it.
 function cpuDice(ai, dice, held, left, tries) {
@@ -509,7 +525,8 @@ function afterChange() {
   else S.seenSeq = Math.max(S.seenSeq, seq);
   if (v.phase === "over") record(v);
   render();
-  if (v.mode === "cpu" && v.phase === "play" && v.g.turn === "cpu") cpuTurn();
+  // Every CPU move also lands here, so only start a turn when none is already running.
+  if (v.mode === "cpu" && v.phase === "play" && v.g.turn === "cpu" && S.cpuRunning !== S.cpuTok) cpuTurn();
 }
 // CUD palette confetti.
 const CONFETTI = ["#f6aa00", "#4dc4ff", "#005aff", "#ff4b00", "#03af7a", "#fff100", "#990099"];
@@ -546,6 +563,10 @@ function record(v) {
 
 async function cpuTurn() {
   const tok = ++S.cpuTok;
+  S.cpuRunning = tok;
+  try { await cpuTurnSteps(tok); } finally { if (S.cpuRunning === tok) S.cpuRunning = null; S.cpuAim = null; }
+}
+async function cpuTurnSteps(tok) {
   const alive = () => tok === S.cpuTok && S.screen === "cpu" && S.cg && S.cg.turn === "cpu";
   await sleep(S.anim ? ROLL_MS + 500 : 700);
   if (!alive()) return;
@@ -562,8 +583,11 @@ async function cpuTurn() {
     if (left <= 0 || mode === "sleepy") break;
     const keep = mode === "max" ? [0, 1, 2, 3, 4].filter(i => fitting(S.cg.target, d)[i]) : makeAI(sc()).keep(d, left);
     if (keep.length === 5) break;
+    // Show what it is going for, so the player can follow its plan.
+    S.cpuAim = { text: mode === "max" ? `「${CAT[S.cg.target].name}」狙い` : aimText(makeAI(sc()), d, keep), keep: keep.map(i => d[i]).sort() };
     const held = [0, 1, 2, 3, 4].map(i => (keep.includes(i) ? "1" : "0")).join("");
-    if (held !== S.cg.held) { patchGame({ held }); await sleep(900); if (!alive()) return; }
+    if (held !== S.cg.held) patchGame({ held }); else render();
+    await sleep(1300); if (!alive()) return;
   }
   if (!alive()) return;
   const d = diceOf(S.cg), open = CATS.filter(c => sc()[c.id] == null).map(c => c.id);
@@ -571,7 +595,7 @@ async function cpuTurn() {
     // Sleepy: throw away the small upper boxes with poor scores, leaving the big ones for the comeback.
     : mode === "sleepy" ? (open.filter(id => CAT[id].face).length ? open.filter(id => CAT[id].face) : open).reduce((a, b) => (scoreOf(b, d) + Math.random() < scoreOf(a, d) + Math.random() ? b : a))
     : makeAI(sc()).pick(d);
-  S.cpuPick = id; render();
+  S.cpuAim = null; S.cpuPick = id; render();
   await sleep(900);
   if (!alive()) return;
   S.cpuPick = null;
@@ -747,7 +771,9 @@ function statusLine(v) {
   const who = nm(v.g.turn);
   const off = v.mode === "room" && !v.online(v.g.turn) ? `${who}がオフラインです` : null;
   return h("div", { class: "status" }, `${who}の番です（${turnNo}/13）`,
-    h("small", null, off || (S.cpuPick ? `「${CAT[S.cpuPick].name}」に記入します` : v.g.rolls ? `${v.g.rolls}回目` : " ")));
+    h("small", null, off || (S.cpuPick ? `「${CAT[S.cpuPick].name}」に記入します`
+      : S.cpuAim && v.mode === "cpu" ? (S.cpuAim.keep.length ? `${S.cpuAim.text}：${S.cpuAim.keep.join("・")} を残して振り直し` : "全部振り直し")
+      : v.g.rolls ? `${v.g.rolls}回目` : " ")));
 }
 
 function sheet(v) {
