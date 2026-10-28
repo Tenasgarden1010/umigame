@@ -312,11 +312,23 @@ function makeAI(sc) {
   };
 }
 
+// A hand the CPU is happy with stops its turn early instead of gambling it away.
+function satisfied(sc, d) {
+  const open = id => sc[id] == null, c = counts(d), sum = d.reduce((a, b) => a + b, 0);
+  if (open("yatzy") && isYatzy(d)) return true;
+  if (open("lst") && scoreOf("lst", d)) return true;
+  if (open("sst") && scoreOf("sst", d) && !open("lst")) return true;
+  if (open("full") && scoreOf("full", d) >= 20) return true;
+  if (open("four") && scoreOf("four", d) >= 24) return true;
+  if (open("three") && scoreOf("three", d) >= 25) return true;
+  if (open("chance") && sum >= 26) return true;
+  return UPPER.some(u => u.face >= 3 && open(u.id) && c[u.face] >= 4);
+}
 // Put the CPU's plan into words from the dice it keeps (ぞろ目 / ストレート / フルハウス / 大きい数字),
 // falling back to the box it most often ends up using after rerolling the rest.
 function aimText(ai, d, keep) {
   const vals = keep.map(i => d[i]).sort(), kinds = [...new Set(vals)], c = counts(vals);
-  if (!vals.length) return "全部振り直し";
+  if (!vals.length) return "全部振り直し";  // shown as-is (no kept dice)
   if (kinds.length === 1 && vals.length >= 2) return `${kinds[0]}のぞろ目狙い`;
   if (vals.length >= 3 && kinds.length === vals.length && kinds[kinds.length - 1] - kinds[0] <= 4) return "ストレート狙い";
   if (kinds.length === 2 && vals.length === 4 && kinds.every(k => c[k] === 2)) return "フルハウス狙い";
@@ -328,7 +340,7 @@ function aimOf(ai, d, keep) {
   for (let t = 0; t < 240; t++) { const id = ai.pick(d.map((x, i) => (keep.includes(i) ? x : d6()))); n[id] = (n[id] || 0) + 1; }
   return Object.keys(n).reduce((a, b) => (n[b] > n[a] ? b : a));
 }
-const CPU_TRIES = { normal: 1.15, strong: 1.6 };  // ≈ 240 / 280 points on average
+const CPU_TRIES = { normal: 1.2, strong: 1.75 };  // ≈ 240 / 280 points on average
 // Roll the CPU's free dice `tries` times (fractional = sometimes one more) and keep the best outcome for it.
 function cpuDice(ai, dice, held, left, tries) {
   const n = Math.floor(tries) + (Math.random() < tries % 1 ? 1 : 0);
@@ -581,7 +593,9 @@ async function cpuTurnSteps(tok) {
     }
     const d = diceOf(S.cg), left = 3 - S.cg.rolls;
     if (left <= 0 || mode === "sleepy") break;
-    const keep = mode === "max" ? [0, 1, 2, 3, 4].filter(i => fitting(S.cg.target, d)[i]) : makeAI(sc()).keep(d, left);
+    const keep = mode === "max" ? [0, 1, 2, 3, 4].filter(i => fitting(S.cg.target, d)[i])
+      : satisfied(sc(), d) ? [0, 1, 2, 3, 4] : makeAI(sc()).keep(d, left);
+    if (keep.length === 5 && S.cg.rolls < 3) { S.cpuAim = { text: "いい目なので、ここで止めます", keep: [] }; render(); await sleep(1100); if (!alive()) return; }
     if (keep.length === 5) break;
     // Show what it is going for, so the player can follow its plan.
     S.cpuAim = { text: mode === "max" ? `「${CAT[S.cg.target].name}」狙い` : aimText(makeAI(sc()), d, keep), keep: keep.map(i => d[i]).sort() };
@@ -772,7 +786,7 @@ function statusLine(v) {
   const off = v.mode === "room" && !v.online(v.g.turn) ? `${who}がオフラインです` : null;
   return h("div", { class: "status" }, `${who}の番です（${turnNo}/13）`,
     h("small", null, off || (S.cpuPick ? `「${CAT[S.cpuPick].name}」に記入します`
-      : S.cpuAim && v.mode === "cpu" ? (S.cpuAim.keep.length ? `${S.cpuAim.text}：${S.cpuAim.keep.join("・")} を残して振り直し` : "全部振り直し")
+      : S.cpuAim && v.mode === "cpu" ? (S.cpuAim.keep.length ? `${S.cpuAim.text}：${S.cpuAim.keep.join("・")} を残して振り直し` : S.cpuAim.text)
       : v.g.rolls ? `${v.g.rolls}回目` : " ")));
 }
 
