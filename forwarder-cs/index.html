@@ -139,6 +139,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .rv .in p { margin: 6px 0 0; }
 .rv .in .lbl { font-size: 12px; font-weight: 700; color: var(--muted); }
 .rv .in .best { text-align: left; color: var(--good); font-size: 14px; }
+.rv .in .why { color: var(--bad); }
 .actions { display: flex; flex-direction: column; gap: 8px; }
 </style>
 </head>
@@ -395,6 +396,7 @@ function showResult() {
       h("summary", {}, h("span", { class: "g g" + o.g }, GMARK[o.g]), h("span", { class: "s" }, c.follow ? "【跳ね返り】" : "", c.subj)),
       h("div", { class: "in" },
         h("p", {}, h("span", { class: "lbl" }, "あなたの対応："), o.x),
+        o.w ? h("p", { class: "why" }, h("span", { class: "lbl" }, "ここが惜しい："), o.w) : null,
         o.g < 2 ? h("p", { class: "best" }, h("span", { class: "lbl" }, "おすすめ："), top.x) : null,
         h("p", {}, c.e)));
   });
